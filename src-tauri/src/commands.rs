@@ -4,6 +4,7 @@ use tauri::State;
 use crate::{
     clock::Clock,
     service::{AppTimerService, TimerService, TimerSnapshot},
+    timer::FocusRatio,
 };
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -21,6 +22,11 @@ pub enum TimerAction {
         #[serde(rename = "expectedRevision")]
         expected_revision: u32,
     },
+    SetRatio {
+        #[serde(rename = "expectedRevision")]
+        expected_revision: u32,
+        ratio: u8,
+    },
 }
 
 pub fn dispatch_action<C: Clock>(
@@ -31,6 +37,13 @@ pub fn dispatch_action<C: Clock>(
         TimerAction::StartFocus { expected_revision } => service.start_focus(expected_revision),
         TimerAction::PauseFocus { expected_revision } => service.pause_focus(expected_revision),
         TimerAction::ResumeFocus { expected_revision } => service.resume_focus(expected_revision),
+        TimerAction::SetRatio {
+            expected_revision,
+            ratio,
+        } => {
+            let ratio = FocusRatio::try_from(ratio).map_err(|error| error.to_string())?;
+            service.set_ratio(expected_revision, ratio)
+        }
     }
     .map_err(|error| error.to_string())
 }
@@ -87,5 +100,20 @@ mod tests {
             },
         )
         .is_err());
+    }
+
+    #[test]
+    fn rejects_unsupported_ratio_without_changing_revision() {
+        let service = TimerService::new(FixedClock);
+
+        assert!(dispatch_action(
+            &service,
+            TimerAction::SetRatio {
+                expected_revision: 0,
+                ratio: 2,
+            },
+        )
+        .is_err());
+        assert_eq!(service.snapshot().unwrap().revision, 0);
     }
 }

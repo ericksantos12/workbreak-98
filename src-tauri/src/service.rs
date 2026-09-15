@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::{
     clock::{Clock, SystemClock},
-    timer::{FocusTimer, TimerError, TimerState},
+    timer::{FocusRatio, FocusTimer, TimerError, TimerState},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -25,6 +25,8 @@ pub struct TimerSnapshot {
     pub revision: u32,
     pub phase: TimerPhase,
     pub focus_elapsed_ms: u64,
+    pub ratio: u8,
+    pub break_earned_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,25 +102,32 @@ impl<C: Clock> TimerService<C> {
         self.transition(expected_revision, FocusTimer::resume)
     }
 
+    pub fn set_ratio(
+        &self,
+        expected_revision: u32,
+        ratio: FocusRatio,
+    ) -> Result<TimerSnapshot, ServiceError> {
+        let mut state = self.lock_state()?;
+        validate_revision(&state, expected_revision)?;
+        let next_revision = next_revision(&state)?;
+        let now_100ns = self.now_100ns()?;
+
+        state.timer.set_ratio(ratio);
+        state.revision = next_revision;
+        snapshot_at(&state, now_100ns)
+    }
+
     fn transition(
         &self,
         expected_revision: u32,
         action: fn(&mut FocusTimer, u64) -> Result<(), TimerError>,
     ) -> Result<TimerSnapshot, ServiceError> {
         let mut state = self.lock_state()?;
-        if state.revision != expected_revision {
-            return Err(ServiceError::StaleRevision {
-                expected: expected_revision,
-                actual: state.revision,
-            });
-        }
-
+        validate_revision(&state, expected_revision)?;
+        let next_revision = next_revision(&state)?;
         let now_100ns = self.now_100ns()?;
         action(&mut state.timer, now_100ns)?;
-        state.revision = state
-            .revision
-            .checked_add(1)
-            .ok_or(ServiceError::RevisionOverflow)?;
+        state.revision = next_revision;
         snapshot_at(&state, now_100ns)
     }
 
@@ -150,7 +159,27 @@ fn snapshot_at(state: &ServiceState, now_100ns: u64) -> Result<TimerSnapshot, Se
         revision: state.revision,
         phase,
         focus_elapsed_ms: state.timer.effective_at(now_100ns)? / 10_000,
+        ratio: state.timer.ratio().value(),
+        break_earned_ms: state.timer.earned_break_at(now_100ns)? / 10_000,
     })
+}
+
+fn validate_revision(state: &ServiceState, expected: u32) -> Result<(), ServiceError> {
+    if state.revision == expected {
+        Ok(())
+    } else {
+        Err(ServiceError::StaleRevision {
+            expected,
+            actual: state.revision,
+        })
+    }
+}
+
+fn next_revision(state: &ServiceState) -> Result<u32, ServiceError> {
+    state
+        .revision
+        .checked_add(1)
+        .ok_or(ServiceError::RevisionOverflow)
 }
 
 #[cfg(test)]
@@ -163,7 +192,7 @@ mod tests {
         },
     };
 
-    use crate::clock::Clock;
+    use crate::{clock::Clock, timer::FocusRatio};
 
     use super::{ServiceError, TimerPhase, TimerService};
 
@@ -234,5 +263,19 @@ mod tests {
             Err(ServiceError::Clock(_))
         ));
         assert_eq!(service.revision_for_test(), 0);
+    }
+
+    #[test]
+    fn ratio_change_recalculates_earned_break_and_increments_revision() {
+        let clock = FakeClock::default();
+        let service = TimerService::new(clock.clone());
+        service.start_focus(0).unwrap();
+        clock.set(30 * 60 * 10_000_000);
+
+        let snapshot = service.set_ratio(1, FocusRatio::Five).unwrap();
+
+        assert_eq!(snapshot.revision, 2);
+        assert_eq!(snapshot.ratio, 5);
+        assert_eq!(snapshot.break_earned_ms, 6 * 60 * 1_000);
     }
 }

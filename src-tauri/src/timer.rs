@@ -1,6 +1,36 @@
 use std::{error::Error, fmt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusRatio {
+    Three,
+    Four,
+    Five,
+}
+
+impl FocusRatio {
+    pub fn value(self) -> u8 {
+        match self {
+            Self::Three => 3,
+            Self::Four => 4,
+            Self::Five => 5,
+        }
+    }
+}
+
+impl TryFrom<u8> for FocusRatio {
+    type Error = TimerError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            3 => Ok(Self::Three),
+            4 => Ok(Self::Four),
+            5 => Ok(Self::Five),
+            _ => Err(TimerError::InvalidRatio),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerState {
     Idle,
     FocusRunning {
@@ -16,6 +46,7 @@ pub enum TimerState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerError {
     InvalidTransition,
+    InvalidRatio,
     TimeWentBackwards,
     DurationOverflow,
 }
@@ -24,6 +55,7 @@ impl fmt::Display for TimerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidTransition => formatter.write_str("invalid timer transition"),
+            Self::InvalidRatio => formatter.write_str("unsupported focus ratio"),
             Self::TimeWentBackwards => formatter.write_str("timer timestamp moved backwards"),
             Self::DurationOverflow => formatter.write_str("timer duration overflowed"),
         }
@@ -35,23 +67,40 @@ impl Error for TimerError {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FocusTimer {
     state: TimerState,
+    ratio: FocusRatio,
 }
 
 impl Default for FocusTimer {
     fn default() -> Self {
         Self {
             state: TimerState::Idle,
+            ratio: FocusRatio::Three,
         }
     }
 }
 
 impl FocusTimer {
     pub fn from_state(state: TimerState) -> Self {
-        Self { state }
+        Self {
+            state,
+            ratio: FocusRatio::Three,
+        }
     }
 
     pub fn state(&self) -> TimerState {
         self.state
+    }
+
+    pub fn ratio(&self) -> FocusRatio {
+        self.ratio
+    }
+
+    pub fn set_ratio(&mut self, ratio: FocusRatio) {
+        self.ratio = ratio;
+    }
+
+    pub fn earned_break_at(&self, now_100ns: u64) -> Result<u64, TimerError> {
+        Ok(self.effective_at(now_100ns)? / u64::from(self.ratio.value()))
     }
 
     pub fn start(&mut self, now_100ns: u64) -> Result<(), TimerError> {
@@ -130,7 +179,7 @@ impl FocusTimer {
 
 #[cfg(test)]
 mod tests {
-    use super::{FocusTimer, TimerError, TimerState};
+    use super::{FocusRatio, FocusTimer, TimerError, TimerState};
 
     const MINUTE: u64 = 60 * 10_000_000;
 
@@ -200,5 +249,38 @@ mod tests {
                 started_at_100ns: 10,
             }
         );
+    }
+
+    #[test]
+    fn calculates_earned_break_for_each_supported_ratio() {
+        let mut timer = FocusTimer::default();
+        timer.start(0).unwrap();
+        timer.pause(60 * MINUTE).unwrap();
+
+        assert_eq!(timer.earned_break_at(60 * MINUTE).unwrap(), 20 * MINUTE);
+        timer.set_ratio(FocusRatio::Four);
+        assert_eq!(timer.earned_break_at(60 * MINUTE).unwrap(), 15 * MINUTE);
+        timer.set_ratio(FocusRatio::Five);
+        assert_eq!(timer.earned_break_at(60 * MINUTE).unwrap(), 12 * MINUTE);
+    }
+
+    #[test]
+    fn changing_ratio_recalculates_the_entire_current_focus() {
+        let mut timer = FocusTimer::default();
+        timer.start(0).unwrap();
+        timer.pause(30 * MINUTE).unwrap();
+        assert_eq!(timer.earned_break_at(30 * MINUTE).unwrap(), 10 * MINUTE);
+
+        timer.set_ratio(FocusRatio::Five);
+
+        assert_eq!(timer.earned_break_at(30 * MINUTE).unwrap(), 6 * MINUTE);
+    }
+
+    #[test]
+    fn accepts_only_supported_ratio_values() {
+        assert_eq!(FocusRatio::try_from(3), Ok(FocusRatio::Three));
+        assert_eq!(FocusRatio::try_from(4), Ok(FocusRatio::Four));
+        assert_eq!(FocusRatio::try_from(5), Ok(FocusRatio::Five));
+        assert_eq!(FocusRatio::try_from(2), Err(TimerError::InvalidRatio));
     }
 }

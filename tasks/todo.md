@@ -76,14 +76,21 @@ Dependências: CP2a. Arquivos: `src/App.tsx`, `src/App.css`, `src/components/Tim
 - [x] Desabilitar ações conflitantes enquanto pendentes e mostrar erro nativo; teclado e layout 800 × 600 utilizáveis.
 Verificar: `npm run build`; `npm run tauri dev` e testar foco, pausa, retomada, minimização e atualização ao voltar. Teste manual de StrictMode sem consultas duplicadas persistentes.
 
-### T08 — Proporção dinâmica e descanso conquistado [M]
-Dependências: T07. Arquivos: `src-tauri/src/timer.rs`, `src-tauri/src/service.rs`, `src-tauri/src/commands.rs`, `src/flowmodoro.ts`, `src/components/TimerPanel.tsx`.
-- [ ] 3:1 é padrão; aceitar somente 3/4/5 e projetar ganho em milissegundos usando divisão inteira sem arredondar a cada tick.
-- [ ] Seletor recalcula todo o foco atual, ativo ou pausado; 60 min produzem 20/15/12 min e 30 min de 3:1 para 5:1 mudam ganho 10 → 6 min.
-- [ ] UI exibe foco e ganho simultaneamente; alteração chega ao domínio via comando validado e retorna preferência no snapshot.
-Verificar: `cargo test --manifest-path src-tauri/Cargo.toml timer::tests`; `cargo test --manifest-path src-tauri/Cargo.toml service::tests`; `npm run build`; seletor ativo/pausado em `npm run tauri dev`.
+### T08a — Proporção dinâmica no domínio e IPC [M]
+Dependências: T07. Arquivos: `src-tauri/src/timer.rs`, `src-tauri/src/service.rs`, `src-tauri/src/commands.rs`.
+- [x] 3:1 é padrão; aceitar somente 3/4/5 e projetar ganho em milissegundos usando divisão inteira sem arredondar a cada tick.
+- [x] Seletor recalcula todo o foco atual, ativo ou pausado; 60 min produzem 20/15/12 min e 30 min de 3:1 para 5:1 mudam ganho 10 → 6 min.
+- [x] Comando validado altera a proporção, incrementa revisão e retorna preferência/ganho no snapshot; valor fora de 3/4/5 é rejeitado sem mutação.
+Verificar: `cargo test --manifest-path src-tauri/Cargo.toml timer::tests`; `cargo test --manifest-path src-tauri/Cargo.toml service::tests`; `cargo test --manifest-path src-tauri/Cargo.toml commands::tests`.
 
-### CP2 — Foco end-to-end (T07–T08)
+### T08b — Exibir e controlar proporção [M]
+Dependências: T08a. Arquivos: `src/flowmodoro.ts`, `src/flowmodoro.test.ts`, `src/useFlowmodoro.ts`, `src/App.tsx`, `src/components/TimerPanel.tsx`.
+- [ ] Contrato TypeScript inclui proporção 3/4/5 e descanso conquistado sem duplicar cálculo do domínio.
+- [ ] Seletor altera a proporção por comando revisado durante foco ativo ou pausado; ações conflitantes permanecem desabilitadas.
+- [ ] UI exibe foco e ganho simultaneamente e identifica a proporção aplicada ao foco atual.
+Verificar: `npx vitest run src/flowmodoro.test.ts`; `npx tsc --noEmit`; `npm run build`; seletor ativo/pausado em `npm run tauri dev`.
+
+### CP2 — Foco end-to-end (T07–T08b)
 - [ ] Foco real inicia/pausa/retoma, UI retro funcional e cálculo das três proporções comprovado.
 - [ ] Verificações de T07/T08 revisadas e aprovação humana registrada antes de conectar persistência.
 
@@ -284,3 +291,10 @@ Verificar: `npx vitest run`; `cargo test --manifest-path src-tauri/Cargo.toml`; 
 - `98.css 0.1.21` contém `@media (not(hover))`, rejeitado pelo minificador CSS do Vite 8. `build.cssMinify=false` preserva o design system sem editar `node_modules`; o build passou depois do ajuste.
 - `npx vitest run`: 6 testes passaram. `cargo test --manifest-path src-tauri/Cargo.toml`: 19 testes passaram. `npm run build`: passou.
 - `npm run tauri dev -- --no-watch` exigiu adicionar `%USERPROFILE%\.cargo\bin` ao PATH do processo atual; Vite iniciou na porta 1420, Rust compilou e `target\debug\flowmodoro.exe` foi lançado. O processo foi encerrado pelo limite da execução assistida.
+
+### 15/09/2026 — T08a concluída
+
+- T08 foi dividida em T08a/T08b para manter no máximo cinco arquivos por task e commits independentes entre domínio/IPC e interface.
+- Testes RED cobriram 3:1/4:1/5:1, recálculo integral e rejeição de valor inválido; implementação mantém precisão em 100 ns e só converte para ms no snapshot.
+- Comando `setRatio` usa revisão esperada; valor inválido e overflow de revisão não alteram estado.
+- Após `cargo fmt`, `cargo test --manifest-path src-tauri/Cargo.toml`: 24 testes passaram.
