@@ -1,116 +1,136 @@
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafb);
-}
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
+  color: #222;
+  background: #008080;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
 }
 
-.container {
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
   margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+}
+
+body {
+  min-height: 100vh;
+  overflow: auto;
+  background-color: #008080;
+  background-image: radial-gradient(#006f6f 0.75px, transparent 0.75px);
+  background-size: 4px 4px;
+}
+
+button:focus-visible,
+select:focus-visible {
+  outline: 1px dotted #000;
+  outline-offset: -4px;
+}
+
+.desktop-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px 18px;
+}
+
+.app-window {
+  width: min(560px, 100%);
+}
+
+.app-body {
+  display: grid;
+  gap: 14px;
+  margin: 14px;
+}
+
+.timer-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.timer-panel fieldset {
+  min-width: 0;
+  margin: 0;
+}
+
+.timer-readout {
+  margin: 6px 0 2px;
+  padding: 18px 10px;
+  color: #00f020;
+  background: #050805;
+  font-family: "Courier New", monospace;
+  font-size: clamp(2rem, 10vw, 4.5rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
   text-align: center;
+  text-shadow: 0 0 8px #00a818;
+  box-shadow:
+    inset -1px -1px #fff,
+    inset 1px 1px #0a0a0a,
+    inset -2px -2px #dfdfdf,
+    inset 2px 2px #808080;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
+.timer-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
 }
 
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
+.timer-actions {
   display: flex;
   justify-content: center;
+  gap: 8px;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+.timer-actions button {
+  min-width: 110px;
 }
 
-a:hover {
-  color: #535bf2;
+.error-message {
+  margin: 0;
+  padding: 8px;
+  color: #fff;
+  background: #800000;
+  border: 1px solid #000;
 }
 
-h1 {
-  text-align: center;
+.app-hint {
+  margin: 0;
+  line-height: 1.45;
 }
 
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+.status-bar-field:first-child {
+  flex: 1;
 }
 
-button {
-  cursor: pointer;
+.status-bar-field:last-child {
+  flex: 0 0 auto;
 }
 
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+@media (max-width: 480px) {
+  .desktop-shell {
+    place-items: start center;
+    padding: 12px 8px;
   }
 
-  a:hover {
-    color: #24c8db;
+  .app-body {
+    margin: 10px;
   }
 
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
+  .timer-meta,
+  .timer-actions {
+    flex-direction: column;
   }
-  button:active {
-    background-color: #0f0f0f69;
+
+  .timer-actions button {
+    width: 100%;
   }
 }

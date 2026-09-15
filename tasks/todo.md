@@ -71,9 +71,9 @@ Verificar: `npx vitest run src/flowmodoro.test.ts src/formatTime.test.ts`; `npx 
 
 ### T07 — Entregar painel de foco 98.css [M]
 Dependências: CP2a. Arquivos: `src/App.tsx`, `src/App.css`, `src/components/TimerPanel.tsx`.
-- [ ] Substituir saudação por painel conectado ao hook; iniciar, pausar e retomar funcionam no Tauri, com duração e estado visíveis.
-- [ ] Importar 98.css antes de ajustes locais, eliminar estilos conflitantes do starter; controles semânticos em português, sem ações decorativas inertes.
-- [ ] Desabilitar ações conflitantes enquanto pendentes e mostrar erro nativo; teclado e layout 800 × 600 utilizáveis.
+- [x] Substituir saudação por painel conectado ao hook; iniciar, pausar e retomar funcionam no Tauri, com duração e estado visíveis.
+- [x] Importar 98.css antes de ajustes locais, eliminar estilos conflitantes do starter; controles semânticos em português, sem ações decorativas inertes.
+- [x] Desabilitar ações conflitantes enquanto pendentes e mostrar erro nativo; teclado e layout 800 × 600 utilizáveis.
 Verificar: `npm run build`; `npm run tauri dev` e testar foco, pausa, retomada, minimização e atualização ao voltar. Teste manual de StrictMode sem consultas duplicadas persistentes.
 
 ### T08 — Proporção dinâmica e descanso conquistado [M]
@@ -276,3 +276,11 @@ Verificar: `npx vitest run`; `cargo test --manifest-path src-tauri/Cargo.toml`; 
 
 - Usuário confirmou o checkpoint e autorizou continuar com T07.
 - Estratégia de commits definida: um commit por task concluída e um commit documental ao fechar cada fase/checkpoint.
+
+### 15/09/2026 — T07 concluída
+
+- Tela starter substituída por janela 98.css em português, com leitura HH:MM:SS, estado e ações iniciar/pausar/retomar ligadas ao serviço Rust.
+- Controles pendentes ficam desabilitados; erro IPC é apresentado por `role=alert`; barra de status anuncia apenas mudanças de estado, não cada tick.
+- `98.css 0.1.21` contém `@media (not(hover))`, rejeitado pelo minificador CSS do Vite 8. `build.cssMinify=false` preserva o design system sem editar `node_modules`; o build passou depois do ajuste.
+- `npx vitest run`: 6 testes passaram. `cargo test --manifest-path src-tauri/Cargo.toml`: 19 testes passaram. `npm run build`: passou.
+- `npm run tauri dev -- --no-watch` exigiu adicionar `%USERPROFILE%\.cargo\bin` ao PATH do processo atual; Vite iniciou na porta 1420, Rust compilou e `target\debug\flowmodoro.exe` foi lançado. O processo foi encerrado pelo limite da execução assistida.

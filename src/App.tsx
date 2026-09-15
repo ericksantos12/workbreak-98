@@ -1,51 +1,70 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import "98.css";
 import "./App.css";
+import TimerPanel from "./components/TimerPanel";
+import { useFlowmodoro } from "./useFlowmodoro";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const { snapshot, error, isLoading, isActionPending, act } = useFlowmodoro();
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+  function runAction(action: "startFocus" | "pauseFocus" | "resumeFocus") {
+    void act(action).catch(() => {
+      // The controller exposes command failures in its state.
+    });
   }
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <main className="desktop-shell">
+      <section className="window app-window" aria-labelledby="app-title">
+        <div className="title-bar">
+          <div className="title-bar-text" id="app-title">
+            Flowmodoro
+          </div>
+        </div>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+        <div className="window-body app-body">
+          <TimerPanel
+            snapshot={snapshot}
+            isLoading={isLoading}
+            isActionPending={isActionPending}
+            onAction={runAction}
+          />
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+          {error && (
+            <p className="error-message" role="alert">
+              Não foi possível acessar o cronômetro: {error}
+            </p>
+          )}
+
+          <p className="app-hint">
+            O tempo é calculado pelo relógio do sistema, mesmo quando esta janela
+            está em segundo plano.
+          </p>
+        </div>
+
+        <div className="status-bar" aria-live="polite">
+          <p className="status-bar-field">
+            {snapshot
+              ? statusLabel(snapshot.phase)
+              : isLoading
+                ? "Conectando ao serviço local..."
+                : "Serviço local indisponível"}
+          </p>
+          <p className="status-bar-field">Sessão local</p>
+        </div>
+      </section>
     </main>
   );
+}
+
+function statusLabel(phase: "idle" | "focusRunning" | "focusPaused") {
+  switch (phase) {
+    case "focusRunning":
+      return "Foco em andamento";
+    case "focusPaused":
+      return "Foco pausado";
+    default:
+      return "Pronto para focar";
+  }
 }
 
 export default App;
