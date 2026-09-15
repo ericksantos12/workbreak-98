@@ -67,7 +67,7 @@ Verificar: `npx vitest run src/flowmodoro.test.ts src/formatTime.test.ts`; `npx 
 
 ### CP2a — Contrato e sincronização (T04–T06)
 - [x] Testes de domínio/serviço/cliente passam com pausas, revisões e respostas atrasadas.
-- [ ] `npm run build` e `cargo check --manifest-path src-tauri/Cargo.toml` passam; ambos passaram, aguardando revisão humana para seguir ao painel integrado.
+- [x] `npm run build` e `cargo check --manifest-path src-tauri/Cargo.toml` passam; checkpoint confirmado pelo usuário em 15/09/2026.
 
 ### T07 — Entregar painel de foco 98.css [M]
 Dependências: CP2a. Arquivos: `src/App.tsx`, `src/App.css`, `src/components/TimerPanel.tsx`.
@@ -270,4 +270,9 @@ Verificar: `npx vitest run`; `cargo test --manifest-path src-tauri/Cargo.toml`; 
 - T06 começou com seis testes RED e adicionou controlador com uma consulta visual pendente, descarte de respostas obsoletas, cleanup de StrictMode, visibilidade e formatadores HH:MM:SS.
 - `npx vitest run src/flowmodoro.test.ts src/formatTime.test.ts`: 6 testes passaram. `npx tsc --noEmit`: passou. `npm run build`: passou.
 - Após `cargo fmt`, `cargo test --manifest-path src-tauri/Cargo.toml`: 19 testes passaram. `cargo check --manifest-path src-tauri/Cargo.toml`: passou antes da formatação; a suite posterior recompilou o código formatado.
-- CP2a aguarda aprovação humana. T07 não foi iniciada.
+- CP2a foi posteriormente aprovado pelo usuário; T07 estava intacta no momento da aprovação.
+
+### 15/09/2026 — CP2a aprovado
+
+- Usuário confirmou o checkpoint e autorizou continuar com T07.
+- Estratégia de commits definida: um commit por task concluída e um commit documental ao fechar cada fase/checkpoint.
