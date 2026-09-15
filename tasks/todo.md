@@ -85,9 +85,9 @@ Verificar: `cargo test --manifest-path src-tauri/Cargo.toml timer::tests`; `carg
 
 ### T08b — Exibir e controlar proporção [M]
 Dependências: T08a. Arquivos: `src/flowmodoro.ts`, `src/flowmodoro.test.ts`, `src/useFlowmodoro.ts`, `src/App.tsx`, `src/components/TimerPanel.tsx`.
-- [ ] Contrato TypeScript inclui proporção 3/4/5 e descanso conquistado sem duplicar cálculo do domínio.
-- [ ] Seletor altera a proporção por comando revisado durante foco ativo ou pausado; ações conflitantes permanecem desabilitadas.
-- [ ] UI exibe foco e ganho simultaneamente e identifica a proporção aplicada ao foco atual.
+- [x] Contrato TypeScript inclui proporção 3/4/5 e descanso conquistado sem duplicar cálculo do domínio.
+- [x] Seletor altera a proporção por comando revisado durante foco ativo ou pausado; ações conflitantes permanecem desabilitadas.
+- [x] UI exibe foco e ganho simultaneamente e identifica a proporção aplicada ao foco atual.
 Verificar: `npx vitest run src/flowmodoro.test.ts`; `npx tsc --noEmit`; `npm run build`; seletor ativo/pausado em `npm run tauri dev`.
 
 ### CP2 — Foco end-to-end (T07–T08b)
@@ -298,3 +298,11 @@ Verificar: `npx vitest run`; `cargo test --manifest-path src-tauri/Cargo.toml`; 
 - Testes RED cobriram 3:1/4:1/5:1, recálculo integral e rejeição de valor inválido; implementação mantém precisão em 100 ns e só converte para ms no snapshot.
 - Comando `setRatio` usa revisão esperada; valor inválido e overflow de revisão não alteram estado.
 - Após `cargo fmt`, `cargo test --manifest-path src-tauri/Cargo.toml`: 24 testes passaram.
+
+### 15/09/2026 — T08b concluída
+
+- Contrato/hook/controlador incluem `ratio` e `breakEarnedMs`; React apenas formata valores calculados pelo Rust.
+- Teste RED comprovou ausência do comando no controlador; teste final valida payload `setRatio` com revisão corrente e atualização do ganho.
+- Painel exibe seletor 3:1/4:1/5:1 e descanso conquistado, com controles desabilitados durante comandos.
+- `npx vitest run src/flowmodoro.test.ts`: 4 testes passaram. `npx tsc --noEmit` e `npm run build`: passaram.
+- `npm run tauri dev -- --no-watch` iniciou Vite, compilou Rust e lançou o executável com o novo contrato; processo encerrado pelo limite da execução assistida.

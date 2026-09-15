@@ -4,10 +4,17 @@ import TimerPanel from "./components/TimerPanel";
 import { useFlowmodoro } from "./useFlowmodoro";
 
 function App() {
-  const { snapshot, error, isLoading, isActionPending, act } = useFlowmodoro();
+  const { snapshot, error, isLoading, isActionPending, act, setRatio } =
+    useFlowmodoro();
 
   function runAction(action: "startFocus" | "pauseFocus" | "resumeFocus") {
     void act(action).catch(() => {
+      // The controller exposes command failures in its state.
+    });
+  }
+
+  function changeRatio(ratio: 3 | 4 | 5) {
+    void setRatio(ratio).catch(() => {
       // The controller exposes command failures in its state.
     });
   }
@@ -27,6 +34,7 @@ function App() {
             isLoading={isLoading}
             isActionPending={isActionPending}
             onAction={runAction}
+            onRatioChange={changeRatio}
           />
 
           {error && (

@@ -4,6 +4,7 @@ import {
   createTimerController,
   getTimerSnapshot,
   type Scheduler,
+  type FocusRatio,
   type TimerActionType,
   type TimerController,
   type TimerControllerState,
@@ -68,5 +69,13 @@ export function useFlowmodoro() {
     return controller.act(type);
   }
 
-  return { ...state, act };
+  function setRatio(ratio: FocusRatio) {
+    const controller = controllerRef.current;
+    if (!controller) {
+      return Promise.reject(new Error("timer controller is not ready"));
+    }
+    return controller.setRatio(ratio);
+  }
+
+  return { ...state, act, setRatio };
 }

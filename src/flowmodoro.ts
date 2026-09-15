@@ -1,17 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type TimerPhase = "idle" | "focusRunning" | "focusPaused";
+export type FocusRatio = 3 | 4 | 5;
 
 export interface TimerSnapshot {
   revision: number;
   phase: TimerPhase;
   focusElapsedMs: number;
+  ratio: FocusRatio;
+  breakEarnedMs: number;
 }
 
 export type TimerAction =
   | { type: "startFocus"; expectedRevision: number }
   | { type: "pauseFocus"; expectedRevision: number }
-  | { type: "resumeFocus"; expectedRevision: number };
+  | { type: "resumeFocus"; expectedRevision: number }
+  | { type: "setRatio"; expectedRevision: number; ratio: FocusRatio };
 
 export function getTimerSnapshot(): Promise<TimerSnapshot> {
   return invoke<TimerSnapshot>("get_timer_snapshot");
@@ -60,6 +64,7 @@ export interface TimerController {
   subscribe(listener: (state: TimerControllerState) => void): () => void;
   getState(): TimerControllerState;
   act(type: TimerActionType): Promise<void>;
+  setRatio(ratio: FocusRatio): Promise<void>;
 }
 
 export function createTimerController({
@@ -132,6 +137,35 @@ export function createTimerController({
       });
   }
 
+  async function performAction(
+    action: { type: TimerActionType } | { type: "setRatio"; ratio: FocusRatio },
+  ) {
+    if (!started || !state.snapshot || state.isActionPending) {
+      throw new Error("timer action is not currently available");
+    }
+
+    const requestId = ++nextRequestId;
+    const requestGeneration = generation;
+    const revisionedAction = {
+      ...action,
+      expectedRevision: state.snapshot.revision,
+    } as TimerAction;
+    update({ isActionPending: true, error: null });
+    try {
+      const snapshot = await transport.applyAction(revisionedAction);
+      applyResponse(requestId, requestGeneration, snapshot);
+    } catch (error) {
+      if (started && requestGeneration === generation) {
+        update({ error: errorMessage(error) });
+      }
+      throw error;
+    } finally {
+      if (started && requestGeneration === generation) {
+        update({ isActionPending: false });
+      }
+    }
+  }
+
   return {
     start() {
       if (started) return;
@@ -160,31 +194,11 @@ export function createTimerController({
     getState() {
       return state;
     },
-    async act(type) {
-      if (!started || !state.snapshot || state.isActionPending) {
-        throw new Error("timer action is not currently available");
-      }
-
-      const requestId = ++nextRequestId;
-      const requestGeneration = generation;
-      const action = {
-        type,
-        expectedRevision: state.snapshot.revision,
-      } as TimerAction;
-      update({ isActionPending: true, error: null });
-      try {
-        const snapshot = await transport.applyAction(action);
-        applyResponse(requestId, requestGeneration, snapshot);
-      } catch (error) {
-        if (started && requestGeneration === generation) {
-          update({ error: errorMessage(error) });
-        }
-        throw error;
-      } finally {
-        if (started && requestGeneration === generation) {
-          update({ isActionPending: false });
-        }
-      }
+    act(type) {
+      return performAction({ type });
+    },
+    setRatio(ratio) {
+      return performAction({ type: "setRatio", ratio });
     },
   };
 }

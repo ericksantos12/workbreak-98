@@ -8,7 +8,13 @@ import {
 } from "./flowmodoro";
 
 function snapshot(revision: number, focusElapsedMs = 0): TimerSnapshot {
-  return { revision, phase: "focusRunning", focusElapsedMs };
+  return {
+    revision,
+    phase: "focusRunning",
+    focusElapsedMs,
+    ratio: 3,
+    breakEarnedMs: Math.floor(focusElapsedMs / 3),
+  };
 }
 
 function deferred<T>() {
@@ -76,6 +82,30 @@ describe("timer controller", () => {
     controller.stop();
   });
 
+  it("sends ratio changes with the current revision", async () => {
+    const transport: TimerTransport = {
+      getSnapshot: vi.fn().mockResolvedValue(snapshot(4, 60_000)),
+      applyAction: vi.fn().mockResolvedValue({
+        ...snapshot(5, 60_000),
+        ratio: 5,
+        breakEarnedMs: 12_000,
+      }),
+    };
+    const { controller } = harness(transport);
+    controller.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await controller.setRatio(5);
+
+    expect(transport.applyAction).toHaveBeenCalledWith({
+      type: "setRatio",
+      expectedRevision: 4,
+      ratio: 5,
+    });
+    expect(controller.getState().snapshot?.breakEarnedMs).toBe(12_000);
+    controller.stop();
+  });
+
   it("ignores a refresh response older than an action response", async () => {
     const slowRefresh = deferred<TimerSnapshot>();
     const action = deferred<TimerSnapshot>();
@@ -94,7 +124,13 @@ describe("timer controller", () => {
     tick();
 
     const actionPromise = controller.act("pauseFocus");
-    action.resolve({ revision: 2, phase: "focusPaused", focusElapsedMs: 10 });
+    action.resolve({
+      revision: 2,
+      phase: "focusPaused",
+      focusElapsedMs: 10,
+      ratio: 3,
+      breakEarnedMs: 3,
+    });
     await actionPromise;
     slowRefresh.resolve(snapshot(1, 5));
     await slowRefresh.promise;
