@@ -116,9 +116,9 @@ Verificar: `cargo test --manifest-path src-tauri/Cargo.toml service::tests`; `ca
 
 ### T11 — Integrar suspensão ao serviço [M]
 Dependências: CP3. Arquivos: `src-tauri/src/power.rs`, `src-tauri/src/service.rs`, `src-tauri/src/timer.rs`, `src-tauri/src/lib.rs`.
-- [ ] Evento captura limite temporal e pausa sessão ativa em ordem com ações/checkpoints; callback não faz I/O pesado. Registro inválido impede iniciar/retomar.
-- [ ] Retomada automática/duplicada não reinicia foco; tempo acordado após retomar permanece excluído até ação manual, sem confundir minimizar com suspender.
-- [ ] Testar evento atrasado em relação ao processamento de checkpoint/ação, cleanup e restauração pausada no desktop; conservar evidência do limite temporal aplicado.
+- [x] Evento captura limite temporal e pausa sessão ativa em ordem com ações/checkpoints; callback não faz I/O pesado. Registro inválido impede iniciar/retomar.
+- [x] Retomada automática/duplicada não reinicia foco; tempo acordado após retomar permanece excluído até ação manual, sem confundir minimizar com suspender.
+- [ ] Testar evento atrasado em relação ao processamento de checkpoint/ação, cleanup e restauração pausada no desktop; testes automatizados passaram, mas suspensão real segue adiada por decisão do usuário.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml power::tests`; `cargo test --manifest-path src-tauri/Cargo.toml service::tests`; `npm run tauri dev` e suspensão real combinada com o usuário.
 
 ### T12 — Fechamento normal persistido [M]
@@ -332,3 +332,12 @@ Verificar: `npx vitest run`; `cargo test --manifest-path src-tauri/Cargo.toml`; 
 
 - Usuário confirmou que preferência e foco pausado recuperam corretamente e autorizou continuar.
 - Próxima fase liberada: suspensão, fechamento normal e instância única.
+
+### 16/09/2026 — implementação da T11 concluída
+
+- Testes RED definiram pausa no timestamp do callback, descarte de evento antigo e bloqueio de iniciar/retomar quando o monitor de energia falha.
+- Callback Win32 apenas captura evento/timestamp e envia pelo canal; worker separado aplica a transição e persiste sob o mesmo mutex das ações/checkpoints.
+- Suspensão incrementa revisão e pausa no limite capturado. Retomada e eventos duplicados não retomam foco; evento anterior ao segmento atual é ignorado.
+- Falha ao registrar notificações mantém o app aberto, mas iniciar/retomar retorna erro explícito. Erro do relógio no callback desabilita novas retomadas.
+- Após `cargo fmt`, `cargo test --manifest-path src-tauri/Cargo.toml`: 36 testes passaram; `cargo check` passou. `npm run app -- --no-watch` compilou e iniciou sem erro de registro.
+- A validação com suspensão física continua pendente conforme exceção aprovada no CP1; não foi simulada como evidência real.

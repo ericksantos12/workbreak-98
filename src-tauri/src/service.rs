@@ -43,6 +43,7 @@ pub struct TimerSnapshot {
 pub enum ServiceError {
     Clock(String),
     Timer(TimerError),
+    PowerUnavailable,
     StaleRevision { expected: u32, actual: u32 },
     RevisionOverflow,
     StateUnavailable,
@@ -53,6 +54,7 @@ impl fmt::Display for ServiceError {
         match self {
             Self::Clock(error) => write!(formatter, "clock unavailable: {error}"),
             Self::Timer(error) => error.fmt(formatter),
+            Self::PowerUnavailable => formatter.write_str("power monitoring is unavailable"),
             Self::StaleRevision { expected, actual } => write!(
                 formatter,
                 "stale timer revision: expected {expected}, current {actual}"
@@ -75,6 +77,7 @@ struct ServiceState {
     timer: FocusTimer,
     revision: u32,
     persistence_status: PersistenceStatus,
+    power_available: bool,
 }
 
 pub struct TimerService<C: Clock> {
@@ -93,6 +96,7 @@ impl<C: Clock> TimerService<C> {
                 timer: FocusTimer::default(),
                 revision: 0,
                 persistence_status: PersistenceStatus::Unavailable,
+                power_available: true,
             }),
             storage: None,
         }
@@ -125,6 +129,7 @@ impl<C: Clock> TimerService<C> {
                 timer,
                 revision,
                 persistence_status,
+                power_available: true,
             }),
             storage: Some(storage),
         }
@@ -137,15 +142,15 @@ impl<C: Clock> TimerService<C> {
     }
 
     pub fn start_focus(&self, expected_revision: u32) -> Result<TimerSnapshot, ServiceError> {
-        self.transition(expected_revision, FocusTimer::start)
+        self.transition(expected_revision, true, FocusTimer::start)
     }
 
     pub fn pause_focus(&self, expected_revision: u32) -> Result<TimerSnapshot, ServiceError> {
-        self.transition(expected_revision, FocusTimer::pause)
+        self.transition(expected_revision, false, FocusTimer::pause)
     }
 
     pub fn resume_focus(&self, expected_revision: u32) -> Result<TimerSnapshot, ServiceError> {
-        self.transition(expected_revision, FocusTimer::resume)
+        self.transition(expected_revision, true, FocusTimer::resume)
     }
 
     pub fn set_ratio(
@@ -177,13 +182,41 @@ impl<C: Clock> TimerService<C> {
         Ok(())
     }
 
+    pub fn pause_for_suspend(&self, at_100ns: u64) -> Result<(), ServiceError> {
+        let mut state = self.lock_state()?;
+        let TimerState::FocusRunning {
+            started_at_100ns, ..
+        } = state.timer.state()
+        else {
+            return Ok(());
+        };
+        if at_100ns < started_at_100ns {
+            return Ok(());
+        }
+
+        let next_revision = next_revision(&state)?;
+        state.timer.pause(at_100ns)?;
+        state.revision = next_revision;
+        self.persist_at(&mut state, at_100ns);
+        Ok(())
+    }
+
+    pub fn set_power_available(&self, available: bool) -> Result<(), ServiceError> {
+        self.lock_state()?.power_available = available;
+        Ok(())
+    }
+
     fn transition(
         &self,
         expected_revision: u32,
+        requires_power: bool,
         action: fn(&mut FocusTimer, u64) -> Result<(), TimerError>,
     ) -> Result<TimerSnapshot, ServiceError> {
         let mut state = self.lock_state()?;
         validate_revision(&state, expected_revision)?;
+        if requires_power && !state.power_available {
+            return Err(ServiceError::PowerUnavailable);
+        }
         let next_revision = next_revision(&state)?;
         let now_100ns = self.now_100ns()?;
         action(&mut state.timer, now_100ns)?;
@@ -519,5 +552,46 @@ mod tests {
             service.snapshot().unwrap().persistence_status,
             PersistenceStatus::Available
         );
+    }
+
+    #[test]
+    fn suspension_pauses_at_the_callback_boundary() {
+        let clock = FakeClock::default();
+        let service = TimerService::new(clock.clone());
+        service.start_focus(0).unwrap();
+        clock.set(20 * 60 * 10_000_000);
+
+        service.pause_for_suspend(12 * 60 * 10_000_000).unwrap();
+
+        let snapshot = service.snapshot().unwrap();
+        assert_eq!(snapshot.phase, TimerPhase::FocusPaused);
+        assert_eq!(snapshot.focus_elapsed_ms, 12 * 60 * 1_000);
+        assert_eq!(snapshot.revision, 2);
+    }
+
+    #[test]
+    fn stale_suspend_event_does_not_pause_a_newer_focus_segment() {
+        let clock = FakeClock::default();
+        clock.set(100);
+        let service = TimerService::new(clock);
+        service.start_focus(0).unwrap();
+
+        service.pause_for_suspend(99).unwrap();
+
+        assert_eq!(service.snapshot().unwrap().phase, TimerPhase::FocusRunning);
+        assert_eq!(service.snapshot().unwrap().revision, 1);
+    }
+
+    #[test]
+    fn unavailable_power_monitor_blocks_start_and_resume() {
+        let service = TimerService::new(FakeClock::default());
+        service.set_power_available(false).unwrap();
+        assert_eq!(service.start_focus(0), Err(ServiceError::PowerUnavailable));
+
+        service.set_power_available(true).unwrap();
+        service.start_focus(0).unwrap();
+        service.pause_focus(1).unwrap();
+        service.set_power_available(false).unwrap();
+        assert_eq!(service.resume_focus(2), Err(ServiceError::PowerUnavailable));
     }
 }

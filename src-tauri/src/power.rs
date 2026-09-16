@@ -39,6 +39,9 @@ pub struct PowerSubscription {
     _context: Box<CallbackContext>,
 }
 
+// The registration owns a stable boxed callback context and is dropped by one worker thread.
+unsafe impl Send for PowerSubscription {}
+
 impl PowerSubscription {
     pub fn register() -> io::Result<(Self, Receiver<PowerNotification>)> {
         let (sender, receiver) = mpsc::channel();
