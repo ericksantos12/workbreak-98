@@ -1,12 +1,33 @@
 import "98.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useState } from "react";
 import "./App.css";
 import TimerPanel from "./components/TimerPanel";
+import {
+  type CloseDecision,
+  onCloseSaveFailed,
+  resolveClose,
+} from "./flowmodoro";
 import { useFlowmodoro } from "./useFlowmodoro";
 
 function App() {
+  const [closeSaveFailed, setCloseSaveFailed] = useState(false);
   const { snapshot, error, isLoading, isActionPending, act, setRatio } =
     useFlowmodoro();
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void onCloseSaveFailed(() => setCloseSaveFailed(true)).then((cleanup) => {
+      if (disposed) cleanup();
+      else unlisten = cleanup;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   function runAction(action: "startFocus" | "pauseFocus" | "resumeFocus") {
     void act(action).catch(() => {
@@ -18,6 +39,11 @@ function App() {
     void setRatio(ratio).catch(() => {
       // The controller exposes command failures in its state.
     });
+  }
+
+  function decideClose(decision: CloseDecision) {
+    if (decision === "cancel") setCloseSaveFailed(false);
+    void resolveClose(decision).catch(() => setCloseSaveFailed(true));
   }
 
   return (
@@ -66,6 +92,29 @@ function App() {
               Os dados locais são inválidos ou incompatíveis. O arquivo original
               não será sobrescrito.
             </p>
+          )}
+          {closeSaveFailed && (
+            <fieldset role="alertdialog" aria-labelledby="close-error-title">
+              <legend id="close-error-title">Falha ao salvar</legend>
+              <p>
+                O fechamento seguro não pôde ser concluído. Tente novamente,
+                cancele o fechamento ou saia sem salvar as alterações recentes.
+              </p>
+              <div className="timer-actions">
+                <button type="button" onClick={() => decideClose("retry")}>
+                  Tentar novamente
+                </button>
+                <button type="button" onClick={() => decideClose("cancel")}>
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => decideClose("exitWithoutSaving")}
+                >
+                  Sair sem salvar
+                </button>
+              </div>
+            </fieldset>
           )}
         </div>
 

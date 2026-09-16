@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export type TimerPhase = "idle" | "focusRunning" | "focusPaused";
 export type FocusRatio = 3 | 4 | 5;
 export type PersistenceStatus = "available" | "unavailable" | "blocked";
+export type CloseDecision = "retry" | "cancel" | "exitWithoutSaving";
 
 export interface TimerSnapshot {
   revision: number;
@@ -27,6 +29,14 @@ export function applyTimerAction(
   action: TimerAction,
 ): Promise<TimerSnapshot> {
   return invoke<TimerSnapshot>("apply_timer_action", { action });
+}
+
+export function resolveClose(decision: CloseDecision): Promise<void> {
+  return invoke("resolve_close", { decision });
+}
+
+export function onCloseSaveFailed(listener: () => void): Promise<() => void> {
+  return listen("close-save-failed", listener);
 }
 
 export interface TimerTransport {

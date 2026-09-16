@@ -44,6 +44,7 @@ pub enum ServiceError {
     Clock(String),
     Timer(TimerError),
     PowerUnavailable,
+    PersistenceUnavailable(PersistenceStatus),
     StaleRevision { expected: u32, actual: u32 },
     RevisionOverflow,
     StateUnavailable,
@@ -55,6 +56,9 @@ impl fmt::Display for ServiceError {
             Self::Clock(error) => write!(formatter, "clock unavailable: {error}"),
             Self::Timer(error) => error.fmt(formatter),
             Self::PowerUnavailable => formatter.write_str("power monitoring is unavailable"),
+            Self::PersistenceUnavailable(status) => {
+                write!(formatter, "session could not be saved: {status:?}")
+            }
             Self::StaleRevision { expected, actual } => write!(
                 formatter,
                 "stale timer revision: expected {expected}, current {actual}"
@@ -204,6 +208,26 @@ impl<C: Clock> TimerService<C> {
     pub fn set_power_available(&self, available: bool) -> Result<(), ServiceError> {
         self.lock_state()?.power_available = available;
         Ok(())
+    }
+
+    pub fn prepare_close(&self) -> Result<TimerSnapshot, ServiceError> {
+        let mut state = self.lock_state()?;
+        let now_100ns = self.now_100ns()?;
+        if matches!(state.timer.state(), TimerState::FocusRunning { .. }) {
+            let next_revision = next_revision(&state)?;
+            state.timer.pause(now_100ns)?;
+            state.revision = next_revision;
+        }
+        self.persist_at(&mut state, now_100ns);
+        let snapshot = snapshot_at(&state, now_100ns)?;
+
+        if state.persistence_status == PersistenceStatus::Available {
+            Ok(snapshot)
+        } else {
+            Err(ServiceError::PersistenceUnavailable(
+                state.persistence_status,
+            ))
+        }
     }
 
     fn transition(
@@ -593,5 +617,96 @@ mod tests {
         service.pause_focus(1).unwrap();
         service.set_power_available(false).unwrap();
         assert_eq!(service.resume_focus(2), Err(ServiceError::PowerUnavailable));
+    }
+
+    #[test]
+    fn preparing_close_pauses_and_persists_running_focus() {
+        let directory = TestDirectory::new();
+        let clock = FakeClock::default();
+        let service = TimerService::from_storage(clock.clone(), directory.storage());
+        service.start_focus(0).unwrap();
+        clock.set(8 * 60 * 10_000_000);
+
+        let snapshot = service.prepare_close().unwrap();
+
+        assert_eq!(snapshot.phase, TimerPhase::FocusPaused);
+        assert_eq!(snapshot.focus_elapsed_ms, 8 * 60 * 1_000);
+        drop(service);
+        let recovered = TimerService::from_storage(clock, directory.storage());
+        assert_eq!(recovered.snapshot().unwrap().phase, TimerPhase::FocusPaused);
+    }
+
+    #[test]
+    fn failed_close_save_keeps_focus_paused_and_can_be_retried() {
+        let directory = TestDirectory::new();
+        let state_path = directory.0.join("state.json");
+        fs::create_dir(&state_path).unwrap();
+        let service = TimerService::from_storage(FakeClock::default(), directory.storage());
+        service.start_focus(0).unwrap();
+
+        assert_eq!(
+            service.prepare_close(),
+            Err(ServiceError::PersistenceUnavailable(
+                PersistenceStatus::Unavailable
+            ))
+        );
+        assert_eq!(service.snapshot().unwrap().phase, TimerPhase::FocusPaused);
+
+        fs::remove_dir(state_path).unwrap();
+        assert!(service.prepare_close().is_ok());
+    }
+
+    #[test]
+    fn repeated_close_after_suspension_does_not_resume_or_advance_revision() {
+        let directory = TestDirectory::new();
+        let clock = FakeClock::default();
+        let service = TimerService::from_storage(clock.clone(), directory.storage());
+        service.start_focus(0).unwrap();
+        clock.set(5 * 60 * 10_000_000);
+        service.pause_for_suspend(5 * 60 * 10_000_000).unwrap();
+
+        let first = service.prepare_close().unwrap();
+        let repeated = service.prepare_close().unwrap();
+
+        assert_eq!(first.phase, TimerPhase::FocusPaused);
+        assert_eq!(repeated.phase, TimerPhase::FocusPaused);
+        assert_eq!(repeated.revision, 2);
+        assert_eq!(repeated.focus_elapsed_ms, 5 * 60 * 1_000);
+    }
+
+    #[test]
+    fn close_and_checkpoint_are_serialized_without_losing_the_pause() {
+        let directory = TestDirectory::new();
+        let clock = FakeClock::default();
+        let service = Arc::new(TimerService::from_storage(
+            clock.clone(),
+            directory.storage(),
+        ));
+        service.start_focus(0).unwrap();
+        clock.set(3 * 60 * 10_000_000);
+        let barrier = Arc::new(Barrier::new(3));
+        let checkpoint_service = Arc::clone(&service);
+        let checkpoint_barrier = Arc::clone(&barrier);
+        let checkpoint = thread::spawn(move || {
+            checkpoint_barrier.wait();
+            checkpoint_service.checkpoint().unwrap();
+        });
+        let close_service = Arc::clone(&service);
+        let close_barrier = Arc::clone(&barrier);
+        let close = thread::spawn(move || {
+            close_barrier.wait();
+            close_service.prepare_close().unwrap();
+        });
+
+        barrier.wait();
+        checkpoint.join().unwrap();
+        close.join().unwrap();
+        drop(service);
+
+        let recovered = TimerService::from_storage(clock, directory.storage());
+        let snapshot = recovered.snapshot().unwrap();
+        assert_eq!(snapshot.phase, TimerPhase::FocusPaused);
+        assert_eq!(snapshot.revision, 2);
+        assert_eq!(snapshot.focus_elapsed_ms, 3 * 60 * 1_000);
     }
 }

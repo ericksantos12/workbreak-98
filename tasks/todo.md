@@ -123,10 +123,18 @@ Verificar: `cargo test --manifest-path src-tauri/Cargo.toml power::tests`; `carg
 
 ### T12 — Fechamento normal persistido [M]
 Dependências: T11. Arquivos: `src-tauri/src/lib.rs`, `src-tauri/src/service.rs`, `src-tauri/src/commands.rs`, `src/flowmodoro.ts`, `src/App.tsx`.
-- [ ] Fechar consolida/pausa e aguarda salvamento antes da saída; não depende de unload e não entra em loop ao autorizar a saída.
-- [ ] Erro de gravação mantém janela aberta e oferece tentar novamente, cancelar fechamento ou sair explicitamente ciente da perda; comandos de decisão validados.
-- [ ] Testes cobrem fechamento concorrente com checkpoint/energia, repetição de fechar e ausência de retomada automática ao cancelar fechamento.
+- [x] Fechar consolida/pausa e aguarda salvamento antes da saída; não depende de unload e não entra em loop ao autorizar a saída.
+- [x] Erro de gravação mantém janela aberta e oferece tentar novamente, cancelar fechamento ou sair explicitamente ciente da perda; comandos de decisão validados.
+- [x] Testes cobrem fechamento concorrente com checkpoint/energia, repetição de fechar e ausência de retomada automática ao cancelar fechamento.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml service::tests`; `cargo test --manifest-path src-tauri/Cargo.toml commands::tests`; `npm run build`; fechar/reabrir e simular erro de escrita com dados de teste no Tauri.
+
+### 16/09/2026 — T12 concluída
+
+- `CloseRequested` é sempre interceptado: o serviço pausa/consolida sob o mutex, grava o documento e só então destrói a janela, evitando recursão do evento.
+- Falha mantém a janela aberta e emite aviso com tentar novamente, cancelar ou sair sem salvar. Repetir tenta persistir o estado já pausado; cancelar não retoma a sessão.
+- Testes cobrem falha e nova tentativa, fechamento repetido após suspensão, corrida com checkpoint e as três decisões do comando.
+- `cargo test`: 42 testes passaram; `cargo check`, `npm run build` e 7 testes Vitest passaram.
+- Fechamento nativo via `WM_CLOSE` encerrou app, launcher Tauri e Vite sem loop ou processo residual. A falha foi validada em armazenamento temporário pelos testes, sem adulterar os dados locais reais.
 
 ### T13 — Garantir instância única [M]
 Dependências: T12. Arquivos: `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/src/lib.rs`.

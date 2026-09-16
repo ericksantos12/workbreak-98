@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{State, WebviewWindow};
 
 use crate::{
     clock::Clock,
@@ -27,6 +27,14 @@ pub enum TimerAction {
         expected_revision: u32,
         ratio: u8,
     },
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CloseDecision {
+    Retry,
+    Cancel,
+    ExitWithoutSaving,
 }
 
 pub fn dispatch_action<C: Clock>(
@@ -59,6 +67,36 @@ pub fn apply_timer_action(
     action: TimerAction,
 ) -> Result<TimerSnapshot, String> {
     dispatch_action(service.inner(), action)
+}
+
+#[tauri::command]
+pub fn resolve_close(
+    window: WebviewWindow,
+    service: State<'_, AppTimerService>,
+    decision: CloseDecision,
+) -> Result<(), String> {
+    let should_destroy = resolve_close_decision(decision, || {
+        service
+            .prepare_close()
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })?;
+    if should_destroy {
+        window.destroy().map_err(|error| error.to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn resolve_close_decision(
+    decision: CloseDecision,
+    prepare_close: impl FnOnce() -> Result<(), String>,
+) -> Result<bool, String> {
+    match decision {
+        CloseDecision::Retry => prepare_close().map(|()| true),
+        CloseDecision::Cancel => Ok(false),
+        CloseDecision::ExitWithoutSaving => Ok(true),
+    }
 }
 
 #[cfg(test)]
@@ -115,5 +153,32 @@ mod tests {
         )
         .is_err());
         assert_eq!(service.snapshot().unwrap().revision, 0);
+    }
+
+    #[test]
+    fn close_decisions_use_camel_case_values() {
+        let decision: super::CloseDecision = serde_json::from_str("\"exitWithoutSaving\"").unwrap();
+
+        assert!(matches!(decision, super::CloseDecision::ExitWithoutSaving));
+    }
+
+    #[test]
+    fn close_decisions_retry_cancel_or_bypass_saving() {
+        let failed_retry = super::resolve_close_decision(super::CloseDecision::Retry, || {
+            Err("write failed".to_owned())
+        });
+        assert_eq!(failed_retry, Err("write failed".to_owned()));
+
+        assert_eq!(
+            super::resolve_close_decision(super::CloseDecision::Cancel, || unreachable!()),
+            Ok(false)
+        );
+        assert_eq!(
+            super::resolve_close_decision(
+                super::CloseDecision::ExitWithoutSaving,
+                || unreachable!()
+            ),
+            Ok(true)
+        );
     }
 }

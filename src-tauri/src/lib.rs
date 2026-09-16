@@ -7,7 +7,7 @@ pub mod timer;
 
 use std::{thread, time::Duration};
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -32,8 +32,20 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_timer_snapshot,
-            commands::apply_timer_action
+            commands::apply_timer_action,
+            commands::resolve_close
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let service = window.state::<service::AppTimerService>();
+                if service.prepare_close().is_ok() {
+                    let _ = window.destroy();
+                } else {
+                    let _ = window.emit("close-save-failed", ());
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
