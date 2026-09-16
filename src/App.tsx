@@ -36,7 +36,11 @@ function App() {
       | "pauseFocus"
       | "resumeFocus"
       | "finishFocus"
-      | "resetFocus",
+      | "resetFocus"
+      | "startBreak"
+      | "pauseBreak"
+      | "resumeBreak"
+      | "endBreak",
   ) {
     if (
       action === "resetFocus" &&
@@ -151,7 +155,14 @@ function App() {
 }
 
 function statusLabel(
-  phase: "idle" | "focusRunning" | "focusPaused" | "breakReady",
+  phase:
+    | "idle"
+    | "focusRunning"
+    | "focusPaused"
+    | "breakReady"
+    | "breakRunning"
+    | "breakPaused"
+    | "breakCompleted",
 ) {
   switch (phase) {
     case "focusRunning":
@@ -160,6 +171,12 @@ function statusLabel(
       return "Foco pausado";
     case "breakReady":
       return "Descanso disponível";
+    case "breakRunning":
+      return "Descanso em andamento";
+    case "breakPaused":
+      return "Descanso pausado";
+    case "breakCompleted":
+      return "Descanso concluído";
     default:
       return "Pronto para focar";
   }

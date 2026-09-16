@@ -202,10 +202,17 @@ Verificar: `cargo test --manifest-path src-tauri/Cargo.toml timer::tests`; `carg
 
 ### T17 — Conectar descanso à interface [M]
 Dependências: T16. Arquivos: `src-tauri/src/commands.rs`, `src/flowmodoro.ts`, `src/components/TimerPanel.tsx`, `src/App.tsx`.
-- [ ] Iniciar descanso aparece em breakReady; controles de pausa/retomada/encerramento correspondem ao estado e exibem restante arredondado para cima.
-- [ ] Conclusão/encerramento oferece iniciar novo foco manualmente; não transfere saldo nem altera histórico.
-- [ ] Pausa por suspensão/recuperação aparece claramente; não anunciar cada tick por leitor de tela nem simular conclusão no React.
+- [x] Iniciar descanso aparece em breakReady; controles de pausa/retomada/encerramento correspondem ao estado e exibem restante arredondado para cima.
+- [x] Conclusão/encerramento oferece iniciar novo foco manualmente; não transfere saldo nem altera histórico.
+- [x] Pausa por suspensão/recuperação aparece claramente; não anunciar cada tick por leitor de tela nem simular conclusão no React.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml commands::tests`; `npm run build`; ciclo curto completo, pular, pausar/retomar e novo foco em `npm run tauri dev`.
+
+### 16/09/2026 — T17 concluída
+
+- O contrato IPC expõe início, pausa, retomada e encerramento do descanso com revisão esperada.
+- A interface mostra o restante em `HH:MM:SS` arredondado para cima e apresenta apenas os controles válidos para cada estado.
+- Encerrar ou concluir descanso oferece iniciar um novo foco manualmente; o React apenas consulta snapshots, sem concluir tempo localmente.
+- `cargo test`: 57 testes Rust passaram; `cargo check`, `npm run build` e 7 testes Vitest passaram. O ciclo visual curto no Tauri fica pendente para a validação desktop de CP6.
 
 ### T18 — Provar recuperação e concorrência do ciclo completo [M]
 Dependências: T17. Arquivos: `src-tauri/src/service.rs`, `src-tauri/src/storage.rs`, `src/flowmodoro.test.ts`.

@@ -1,7 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-export type TimerPhase = "idle" | "focusRunning" | "focusPaused" | "breakReady";
+export type TimerPhase =
+  | "idle"
+  | "focusRunning"
+  | "focusPaused"
+  | "breakReady"
+  | "breakRunning"
+  | "breakPaused"
+  | "breakCompleted";
 export type FocusRatio = 3 | 4 | 5;
 export type PersistenceStatus = "available" | "unavailable" | "blocked";
 export type CloseDecision = "retry" | "cancel" | "exitWithoutSaving";
@@ -12,6 +19,7 @@ export interface TimerSnapshot {
   focusElapsedMs: number;
   ratio: FocusRatio;
   breakEarnedMs: number;
+  breakRemainingMs: number;
   history: FocusHistoryEntry[];
   persistenceStatus: PersistenceStatus;
 }
@@ -30,6 +38,10 @@ export type TimerAction =
   | { type: "resumeFocus"; expectedRevision: number }
   | { type: "finishFocus"; expectedRevision: number }
   | { type: "resetFocus"; expectedRevision: number }
+  | { type: "startBreak"; expectedRevision: number }
+  | { type: "pauseBreak"; expectedRevision: number }
+  | { type: "resumeBreak"; expectedRevision: number }
+  | { type: "endBreak"; expectedRevision: number }
   | { type: "setRatio"; expectedRevision: number; ratio: FocusRatio };
 
 export function getTimerSnapshot(): Promise<TimerSnapshot> {

@@ -30,6 +30,22 @@ pub enum TimerAction {
         #[serde(rename = "expectedRevision")]
         expected_revision: u32,
     },
+    StartBreak {
+        #[serde(rename = "expectedRevision")]
+        expected_revision: u32,
+    },
+    PauseBreak {
+        #[serde(rename = "expectedRevision")]
+        expected_revision: u32,
+    },
+    ResumeBreak {
+        #[serde(rename = "expectedRevision")]
+        expected_revision: u32,
+    },
+    EndBreak {
+        #[serde(rename = "expectedRevision")]
+        expected_revision: u32,
+    },
     SetRatio {
         #[serde(rename = "expectedRevision")]
         expected_revision: u32,
@@ -55,6 +71,10 @@ pub fn dispatch_action<C: Clock>(
         TimerAction::ResumeFocus { expected_revision } => service.resume_focus(expected_revision),
         TimerAction::FinishFocus { expected_revision } => service.finish_focus(expected_revision),
         TimerAction::ResetFocus { expected_revision } => service.reset_focus(expected_revision),
+        TimerAction::StartBreak { expected_revision } => service.start_break(expected_revision),
+        TimerAction::PauseBreak { expected_revision } => service.pause_break(expected_revision),
+        TimerAction::ResumeBreak { expected_revision } => service.resume_break(expected_revision),
+        TimerAction::EndBreak { expected_revision } => service.end_break(expected_revision),
         TimerAction::SetRatio {
             expected_revision,
             ratio,
@@ -111,7 +131,13 @@ fn resolve_close_decision(
 
 #[cfg(test)]
 mod tests {
-    use std::io;
+    use std::{
+        io,
+        sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        },
+    };
 
     use crate::{
         clock::Clock,
@@ -125,6 +151,14 @@ mod tests {
     impl Clock for FixedClock {
         fn now_100ns(&self) -> io::Result<u64> {
             Ok(100)
+        }
+    }
+
+    struct MutableClock(Arc<AtomicU64>);
+
+    impl Clock for MutableClock {
+        fn now_100ns(&self) -> io::Result<u64> {
+            Ok(self.0.load(Ordering::Relaxed))
         }
     }
 
@@ -199,6 +233,36 @@ mod tests {
         )
         .unwrap();
         assert_eq!(reset.phase, TimerPhase::Idle);
+    }
+
+    #[test]
+    fn dispatches_break_actions_against_expected_revision() {
+        let now = Arc::new(AtomicU64::new(0));
+        let service = TimerService::new(MutableClock(Arc::clone(&now)));
+        dispatch_action(
+            &service,
+            TimerAction::StartFocus {
+                expected_revision: 0,
+            },
+        )
+        .unwrap();
+        now.store(30 * 60 * 10_000_000, Ordering::Relaxed);
+        dispatch_action(
+            &service,
+            TimerAction::FinishFocus {
+                expected_revision: 1,
+            },
+        )
+        .unwrap();
+
+        let started = dispatch_action(
+            &service,
+            TimerAction::StartBreak {
+                expected_revision: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(started.phase, TimerPhase::BreakRunning);
     }
 
     #[test]

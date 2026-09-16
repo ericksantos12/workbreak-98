@@ -3,7 +3,7 @@ import type {
   TimerActionType,
   TimerSnapshot,
 } from "../flowmodoro";
-import { formatElapsedTime } from "../formatTime";
+import { formatElapsedTime, formatRemainingTime } from "../formatTime";
 
 interface TimerPanelProps {
   snapshot: TimerSnapshot | null;
@@ -58,6 +58,15 @@ function TimerPanel({
           <span>Proporção atual: {snapshot?.ratio ?? 3}:1</span>
         </p>
       </fieldset>
+
+      {snapshot?.phase.startsWith("break") && (
+        <fieldset>
+          <legend>Descanso</legend>
+          <p className="timer-readout" aria-label="Tempo de descanso restante">
+            {formatRemainingTime(snapshot.breakRemainingMs)}
+          </p>
+        </fieldset>
+      )}
 
       <div className="timer-actions" aria-label="Controles do foco">
         {(!snapshot || snapshot.phase === "idle") && (
@@ -121,6 +130,63 @@ function TimerPanel({
             </button>
           </>
         )}
+        {snapshot?.phase === "breakReady" && (
+          <button
+            className="default"
+            type="button"
+            disabled={disabled}
+            onClick={() => onAction("startBreak")}
+          >
+            Iniciar descanso
+          </button>
+        )}
+        {snapshot?.phase === "breakRunning" && (
+          <>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onAction("pauseBreak")}
+            >
+              Pausar descanso
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onAction("endBreak")}
+            >
+              Encerrar descanso
+            </button>
+          </>
+        )}
+        {snapshot?.phase === "breakPaused" && (
+          <>
+            <button
+              className="default"
+              type="button"
+              disabled={disabled}
+              onClick={() => onAction("resumeBreak")}
+            >
+              Retomar descanso
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onAction("endBreak")}
+            >
+              Encerrar descanso
+            </button>
+          </>
+        )}
+        {snapshot?.phase === "breakCompleted" && (
+          <button
+            className="default"
+            type="button"
+            disabled={disabled}
+            onClick={() => onAction("startFocus")}
+          >
+            Iniciar novo foco
+          </button>
+        )}
       </div>
     </section>
   );
@@ -134,6 +200,12 @@ function phaseLabel(phase: TimerSnapshot["phase"] | undefined) {
       return "Pausado";
     case "breakReady":
       return "Descanso disponível";
+    case "breakRunning":
+      return "Descansando";
+    case "breakPaused":
+      return "Descanso pausado";
+    case "breakCompleted":
+      return "Descanso concluído";
     default:
       return "Aguardando";
   }
