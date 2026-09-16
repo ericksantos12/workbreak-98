@@ -91,8 +91,8 @@ Dependências: T08a. Arquivos: `src/flowmodoro.ts`, `src/flowmodoro.test.ts`, `s
 Verificar: `npx vitest run src/flowmodoro.test.ts`; `npx tsc --noEmit`; `npm run build`; seletor ativo/pausado em `npm run tauri dev`.
 
 ### CP2 — Foco end-to-end (T07–T08b)
-- [ ] Foco real inicia/pausa/retoma, UI retro funcional e cálculo das três proporções comprovado.
-- [ ] Verificações de T07/T08 revisadas e aprovação humana registrada antes de conectar persistência.
+- [x] Foco real inicia/pausa/retoma, UI retro funcional e cálculo das três proporções comprovado.
+- [x] Verificações de T07/T08 revisadas e aprovação humana registrada antes de conectar persistência.
 
 ## C — Continuidade e energia (C2/D1 do plano)
 
@@ -306,3 +306,8 @@ Verificar: `npx vitest run`; `cargo test --manifest-path src-tauri/Cargo.toml`; 
 - Painel exibe seletor 3:1/4:1/5:1 e descanso conquistado, com controles desabilitados durante comandos.
 - `npx vitest run src/flowmodoro.test.ts`: 4 testes passaram. `npx tsc --noEmit` e `npm run build`: passaram.
 - `npm run tauri dev -- --no-watch` iniciou Vite, compilou Rust e lançou o executável com o novo contrato; processo encerrado pelo limite da execução assistida.
+
+### 15/09/2026 — CP2 aprovado
+
+- Usuário autorizou continuar a implementação após revisar foco, proporções e interface retro.
+- Próxima fase liberada: persistência e recuperação do foco a partir da T09.
