@@ -138,9 +138,17 @@ Verificar: `cargo test --manifest-path src-tauri/Cargo.toml service::tests`; `ca
 
 ### T13 — Garantir instância única [M]
 Dependências: T12. Arquivos: `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/src/lib.rs`.
-- [ ] Adicionar plugin 2.x aprovado, registrado primeiro e antes de abrir armazenamento; segunda instância não inicializa outro escritor.
-- [ ] Segunda execução restaura/foca janela existente; não inicia servidor Vite adicional para testar isso.
+- [x] Adicionar plugin 2.x aprovado, registrado primeiro e antes de abrir armazenamento; segunda instância não inicializa outro escritor.
+- [ ] Segunda execução restaura/foca janela existente; execução direta encerrou e manteve a primária ativa, mas a restauração visual após minimizar ainda requer confirmação humana.
 Verificar: `cargo check --manifest-path src-tauri/Cargo.toml`; `npm run tauri dev`, depois executar novamente o binário debug gerado para observar instância única e ausência de gravação concorrente. Registrar caminho efetivo do binário.
+
+### 16/09/2026 — implementação da T13 concluída
+
+- `tauri-plugin-single-instance` 2.4.4 foi registrado como primeiro plugin, antes do opener e do `setup` que abre o armazenamento.
+- Callback da segunda execução chama `unminimize`, `show` e `set_focus` na janela `main` existente.
+- Com uma instância iniciada por `npm run app -- --no-watch`, a execução direta de `src-tauri/target/debug/workbreak-98.exe` encerrou em até 10 segundos, enquanto a instância primária permaneceu ativa e fechou normalmente depois.
+- O teste reutilizou o Vite da instância primária; nenhum segundo servidor foi iniciado. `cargo check`, 42 testes Rust e `npm run build` passaram.
+- O harness Win32 não conseguiu minimizar automaticamente a janela sem decoração; resta confirmar visualmente no CP4 que uma segunda execução restaura e foca a janela minimizada.
 
 ### CP4 — Ciclo de vida Windows (T11–T13)
 - [ ] Minimizar conta; suspender pausa; retorno exige retomada manual; fechar salva; segunda instância não escreve.
