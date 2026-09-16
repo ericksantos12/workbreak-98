@@ -43,6 +43,10 @@ pub enum TimerState {
         accumulated_100ns: u64,
         paused_at_100ns: u64,
     },
+    BreakReady {
+        focus_elapsed_100ns: u64,
+        break_earned_100ns: u64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
@@ -51,6 +55,7 @@ pub enum PersistedFocusPhase {
     Idle,
     Running,
     Paused,
+    BreakReady,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
@@ -59,6 +64,8 @@ pub struct PersistedTimer {
     pub phase: PersistedFocusPhase,
     pub elapsed_100ns: u64,
     pub ratio: u8,
+    #[serde(default)]
+    pub break_earned_100ns: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,6 +127,15 @@ impl FocusTimer {
                 accumulated_100ns: persisted.elapsed_100ns,
                 paused_at_100ns: now_100ns,
             },
+            PersistedFocusPhase::BreakReady
+                if persisted.elapsed_100ns > 0 && persisted.break_earned_100ns > 0 =>
+            {
+                TimerState::BreakReady {
+                    focus_elapsed_100ns: persisted.elapsed_100ns,
+                    break_earned_100ns: persisted.break_earned_100ns,
+                }
+            }
+            PersistedFocusPhase::BreakReady => return Err(TimerError::InvalidPersistedState),
         };
 
         Ok(Self { state, ratio })
@@ -130,12 +146,14 @@ impl FocusTimer {
             TimerState::Idle => PersistedFocusPhase::Idle,
             TimerState::FocusRunning { .. } => PersistedFocusPhase::Running,
             TimerState::FocusPaused { .. } => PersistedFocusPhase::Paused,
+            TimerState::BreakReady { .. } => PersistedFocusPhase::BreakReady,
         };
 
         Ok(PersistedTimer {
             phase,
             elapsed_100ns: self.effective_at(now_100ns)?,
             ratio: self.ratio.value(),
+            break_earned_100ns: self.earned_break_at(now_100ns)?,
         })
     }
 
@@ -145,10 +163,6 @@ impl FocusTimer {
 
     pub fn set_ratio(&mut self, ratio: FocusRatio) {
         self.ratio = ratio;
-    }
-
-    pub fn earned_break_at(&self, now_100ns: u64) -> Result<u64, TimerError> {
-        Ok(self.effective_at(now_100ns)? / u64::from(self.ratio.value()))
     }
 
     pub fn start(&mut self, now_100ns: u64) -> Result<(), TimerError> {
@@ -204,12 +218,47 @@ impl FocusTimer {
         Ok(())
     }
 
+    pub fn finish(&mut self, now_100ns: u64) -> Result<(), TimerError> {
+        let focus_elapsed_100ns = match self.state {
+            TimerState::FocusRunning { .. } | TimerState::FocusPaused { .. } => {
+                self.effective_at(now_100ns)?
+            }
+            _ => return Err(TimerError::InvalidTransition),
+        };
+        if focus_elapsed_100ns == 0 {
+            self.state = TimerState::Idle;
+            return Ok(());
+        }
+
+        self.state = TimerState::BreakReady {
+            focus_elapsed_100ns,
+            break_earned_100ns: focus_elapsed_100ns / u64::from(self.ratio.value()),
+        };
+        Ok(())
+    }
+
+    pub fn reset(&mut self, now_100ns: u64) -> Result<(), TimerError> {
+        if !matches!(
+            self.state,
+            TimerState::FocusRunning { .. } | TimerState::FocusPaused { .. }
+        ) {
+            return Err(TimerError::InvalidTransition);
+        }
+        self.effective_at(now_100ns)?;
+        self.state = TimerState::Idle;
+        Ok(())
+    }
+
     pub fn effective_at(&self, now_100ns: u64) -> Result<u64, TimerError> {
         match self.state {
             TimerState::Idle => Ok(0),
             TimerState::FocusPaused {
                 accumulated_100ns, ..
             } => Ok(accumulated_100ns),
+            TimerState::BreakReady {
+                focus_elapsed_100ns,
+                ..
+            } => Ok(focus_elapsed_100ns),
             TimerState::FocusRunning {
                 accumulated_100ns,
                 started_at_100ns,
@@ -221,6 +270,15 @@ impl FocusTimer {
                     .checked_add(elapsed)
                     .ok_or(TimerError::DurationOverflow)
             }
+        }
+    }
+
+    pub fn earned_break_at(&self, now_100ns: u64) -> Result<u64, TimerError> {
+        match self.state {
+            TimerState::BreakReady {
+                break_earned_100ns, ..
+            } => Ok(break_earned_100ns),
+            _ => Ok(self.effective_at(now_100ns)? / u64::from(self.ratio.value())),
         }
     }
 }
@@ -340,6 +398,7 @@ mod tests {
             phase: PersistedFocusPhase::Running,
             elapsed_100ns: 12_345,
             ratio: 5,
+            break_earned_100ns: 0,
         };
 
         let timer = FocusTimer::restore(persisted, 900).unwrap();
@@ -366,6 +425,7 @@ mod tests {
                 phase: PersistedFocusPhase::Running,
                 elapsed_100ns: 400,
                 ratio: 3,
+                break_earned_100ns: 133,
             }
         );
     }
@@ -377,10 +437,52 @@ mod tests {
                 phase: PersistedFocusPhase::Idle,
                 elapsed_100ns: 1,
                 ratio: 3,
+                break_earned_100ns: 0,
             },
             0,
         );
 
         assert_eq!(result, Err(TimerError::InvalidPersistedState));
+    }
+
+    #[test]
+    fn finishing_focus_freezes_its_duration_and_earned_break() {
+        let mut timer = FocusTimer::default();
+        timer.start(0).unwrap();
+
+        timer.finish(30 * MINUTE).unwrap();
+
+        assert_eq!(
+            timer.state(),
+            TimerState::BreakReady {
+                focus_elapsed_100ns: 30 * MINUTE,
+                break_earned_100ns: 10 * MINUTE,
+            }
+        );
+        assert_eq!(timer.effective_at(60 * MINUTE).unwrap(), 30 * MINUTE);
+        assert_eq!(timer.earned_break_at(60 * MINUTE).unwrap(), 10 * MINUTE);
+    }
+
+    #[test]
+    fn resetting_focus_discards_elapsed_time_and_break() {
+        let mut timer = FocusTimer::default();
+        timer.start(0).unwrap();
+
+        timer.reset(30 * MINUTE).unwrap();
+
+        assert_eq!(timer.state(), TimerState::Idle);
+        assert_eq!(timer.effective_at(30 * MINUTE).unwrap(), 0);
+        assert_eq!(timer.earned_break_at(30 * MINUTE).unwrap(), 0);
+    }
+
+    #[test]
+    fn resetting_paused_focus_discards_its_consolidated_time() {
+        let mut timer = FocusTimer::default();
+        timer.start(0).unwrap();
+        timer.pause(30 * MINUTE).unwrap();
+
+        timer.reset(45 * MINUTE).unwrap();
+
+        assert_eq!(timer.state(), TimerState::Idle);
     }
 }

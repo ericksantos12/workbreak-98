@@ -158,17 +158,27 @@ Verificar: `cargo check --manifest-path src-tauri/Cargo.toml`; `npm run tauri de
 
 ### T14 — Finalizar foco com histórico transacional [M]
 Dependências: CP4. Arquivos: `src-tauri/src/timer.rs`, `src-tauri/src/storage.rs`, `src-tauri/src/service.rs`.
-- [ ] Finalizar foco ativo/pausado cria registro com identificador, data/hora civil, foco efetivo, proporção final e descanso calculado; sessão vira breakReady no mesmo documento.
-- [ ] Foco zero volta a idle sem registro; comandos repetidos não duplicam histórico; IDs não dependem só de data civil e são validados na leitura.
+- [x] Finalizar foco ativo/pausado cria registro com identificador, data/hora civil, foco efetivo, proporção final e descanso calculado; sessão vira breakReady no mesmo documento.
+- [x] Reset em foco ativo/pausado descarta a sessão sem criar histórico ou descanso, restaura o timer a zero e persiste a transição; comandos repetidos não criam efeitos extras.
+- [x] Foco zero volta a idle sem registro; comandos repetidos não duplicam histórico; IDs não dependem só de data civil e são validados na leitura.
 - [ ] Descanso disponível não diminui com espera; preferência posterior afeta apenas próximo foco. Restauro de breakReady preserva histórico/descanso congelados.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml timer::tests`; `cargo test --manifest-path src-tauri/Cargo.toml storage::tests`; `cargo test --manifest-path src-tauri/Cargo.toml service::tests`.
 
 ### T15 — Exibir finalização e histórico na interface [M]
 Dependências: T14. Arquivos: `src-tauri/src/commands.rs`, `src/flowmodoro.ts`, `src/components/TimerPanel.tsx`, `src/components/HistoryPanel.tsx`, `src/App.tsx`.
-- [ ] Finalizar disponível em foco ativo/pausado e protegido contra cliques repetidos; mostrar descanso disponível sem regressivo automático.
-- [ ] Histórico mais recente primeiro, com campos aprovados e estado vazio; datas em português, durações pelo formatador existente.
-- [ ] UI indica quando proporção vale para próximo foco; alterações não mudam registros antigos nem descanso concedido.
+- [x] Finalizar disponível em foco ativo/pausado e protegido contra cliques repetidos; mostrar descanso disponível sem regressivo automático.
+- [x] Reset disponível em foco ativo/pausado, pede confirmação e informa que não será salvo no histórico.
+- [x] Histórico mais recente primeiro, com campos aprovados e estado vazio; datas em português, durações pelo formatador existente.
+- [x] UI indica quando proporção vale para próximo foco; alterações não mudam registros antigos nem descanso concedido.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml commands::tests`; `npm run build`; `npm run tauri dev` e finalizar/reabrir/trocar proporção em breakReady. Início do descanso será habilitado em T17, sem botão que simule funcionalidade nesta etapa.
+
+### 16/09/2026 — T14 e T15 concluídas
+
+- Finalizar cria registro imutável (ID sequencial, data/hora civil Unix, foco efetivo, proporção e descanso) e troca para `breakReady` no mesmo documento JSON.
+- Reset foi adicionado por solicitação do usuário: fica disponível em foco ativo/pausado, pede confirmação na UI, persiste `idle` e não cria histórico nem descanso.
+- `breakReady` congela foco/descanso; trocar a proporção depois disso prepara apenas o próximo foco e não altera o registro nem o descanso concedido.
+- Documentos com IDs inválidos ou duplicados são bloqueados sem sobrescrita. Documentos anteriores sem histórico são lidos com lista vazia e próximo ID 1.
+- `cargo test`: 51 testes Rust passaram; `cargo check`, `npm run build` e 7 testes Vitest passaram. A inspeção visual no Tauri de finalizar/reset/histórico ainda será incluída na validação desktop do CP5.
 
 ### CP5 — Finalização persistida (T14–T15)
 - [ ] Caminho foco → histórico/descanso disponível funciona e sobrevive a reabertura sem duplicatas.

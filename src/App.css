@@ -95,6 +95,13 @@ select:focus-visible {
   min-width: 110px;
 }
 
+.history-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 24px;
+}
+
 .error-message {
   margin: 0;
   padding: 8px;

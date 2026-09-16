@@ -22,6 +22,14 @@ pub enum TimerAction {
         #[serde(rename = "expectedRevision")]
         expected_revision: u32,
     },
+    FinishFocus {
+        #[serde(rename = "expectedRevision")]
+        expected_revision: u32,
+    },
+    ResetFocus {
+        #[serde(rename = "expectedRevision")]
+        expected_revision: u32,
+    },
     SetRatio {
         #[serde(rename = "expectedRevision")]
         expected_revision: u32,
@@ -45,6 +53,8 @@ pub fn dispatch_action<C: Clock>(
         TimerAction::StartFocus { expected_revision } => service.start_focus(expected_revision),
         TimerAction::PauseFocus { expected_revision } => service.pause_focus(expected_revision),
         TimerAction::ResumeFocus { expected_revision } => service.resume_focus(expected_revision),
+        TimerAction::FinishFocus { expected_revision } => service.finish_focus(expected_revision),
+        TimerAction::ResetFocus { expected_revision } => service.reset_focus(expected_revision),
         TimerAction::SetRatio {
             expected_revision,
             ratio,
@@ -153,6 +163,42 @@ mod tests {
         )
         .is_err());
         assert_eq!(service.snapshot().unwrap().revision, 0);
+    }
+
+    #[test]
+    fn dispatches_finish_and_reset_actions() {
+        let service = TimerService::new(FixedClock);
+        dispatch_action(
+            &service,
+            TimerAction::StartFocus {
+                expected_revision: 0,
+            },
+        )
+        .unwrap();
+        let finished = dispatch_action(
+            &service,
+            TimerAction::FinishFocus {
+                expected_revision: 1,
+            },
+        )
+        .unwrap();
+        assert_eq!(finished.phase, TimerPhase::Idle);
+
+        dispatch_action(
+            &service,
+            TimerAction::StartFocus {
+                expected_revision: 2,
+            },
+        )
+        .unwrap();
+        let reset = dispatch_action(
+            &service,
+            TimerAction::ResetFocus {
+                expected_revision: 3,
+            },
+        )
+        .unwrap();
+        assert_eq!(reset.phase, TimerPhase::Idle);
     }
 
     #[test]

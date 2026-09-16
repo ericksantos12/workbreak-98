@@ -71,23 +71,55 @@ function TimerPanel({
           </button>
         )}
         {snapshot?.phase === "focusRunning" && (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => onAction("pauseFocus")}
-          >
-            Pausar
-          </button>
+          <>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onAction("pauseFocus")}
+            >
+              Pausar
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onAction("finishFocus")}
+            >
+              Finalizar foco
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onAction("resetFocus")}
+            >
+              Reset
+            </button>
+          </>
         )}
         {snapshot?.phase === "focusPaused" && (
-          <button
-            className="default"
-            type="button"
-            disabled={disabled}
-            onClick={() => onAction("resumeFocus")}
-          >
-            Retomar
-          </button>
+          <>
+            <button
+              className="default"
+              type="button"
+              disabled={disabled}
+              onClick={() => onAction("resumeFocus")}
+            >
+              Retomar
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onAction("finishFocus")}
+            >
+              Finalizar foco
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onAction("resetFocus")}
+            >
+              Reset
+            </button>
+          </>
         )}
       </div>
     </section>
@@ -100,6 +132,8 @@ function phaseLabel(phase: TimerSnapshot["phase"] | undefined) {
       return "Em foco";
     case "focusPaused":
       return "Pausado";
+    case "breakReady":
+      return "Descanso disponível";
     default:
       return "Aguardando";
   }

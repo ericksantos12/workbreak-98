@@ -16,7 +16,7 @@ Entregar o ciclo foco → descanso manual → novo foco, com proporção dinâmi
 - Serviço nativo serializa ações da UI, eventos de energia, checkpoints e fechamento. Escritas ordenadas; callbacks do SO apenas capturam amostra de tempo e encaminham evento, sem I/O demorado.
 - React recebe snapshots autoritativos. Não persiste sessão em localStorage nem mantém um segundo cronômetro de negócio.
 - Estados: idle, focusRunning, focusPaused, breakReady, breakRunning, breakPaused e breakCompleted. Encerrar/pular descanso leva a breakCompleted; foco zero volta a idle.
-- Ações explícitas: iniciar/pausar/retomar/finalizar foco, mudar proporção, iniciar/pausar/retomar/encerrar descanso. Repetições fora de estado válido não criam transições extras.
+- Ações explícitas: iniciar/pausar/retomar/finalizar/resetar foco, mudar proporção, iniciar/pausar/retomar/encerrar descanso. Reset descarta o foco em andamento sem registrar histórico ou descanso. Repetições fora de estado válido não criam transições extras.
 - Snapshot contém revisão crescente, estado, proporção preferida, durações calculadas, histórico e situação da persistência. Comandos validam a revisão esperada para rejeitar ações obsoletas; avanço temporal de projeção não precisa incrementar a revisão de transição.
 - Uma requisição de atualização visual por vez, aproximadamente a cada 250 ms enquanto visível; respostas obsoletas são ignoradas. Ao voltar à janela, buscar snapshot imediato. Intervalos nunca somam segundos.
 - Conclusão do descanso é normalizada pelo serviço ao consultar/agir/checkpointar, antes de aplicar novos comandos; término lógico é limitado à duração concedida.

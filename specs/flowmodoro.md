@@ -8,7 +8,7 @@ Não autoriza implementação. PLAN e TASKS dependem dos gates posteriores.
 
 Aplicativo desktop Tauri para Windows para trabalhar por tempo livre e obter descanso proporcional, com interface em português e visual Windows 98 usando 98.css.
 
-- Iniciar, pausar, retomar e finalizar foco; pausas não geram descanso.
+- Iniciar, pausar, retomar, finalizar e resetar foco; pausas não geram descanso. Reset descarta o foco atual, volta o timer a zero e não cria histórico nem descanso.
 - Proporções disponíveis: 3:1 (padrão), 4:1 e 5:1.
 - Durante o foco, mudar a proporção recalcula o descanso de todo o foco efetivo atual.
 - Exibir foco transcorrido e descanso conquistado em tempo real.

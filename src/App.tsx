@@ -2,6 +2,7 @@ import "98.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import "./App.css";
+import HistoryPanel from "./components/HistoryPanel";
 import TimerPanel from "./components/TimerPanel";
 import {
   type CloseDecision,
@@ -29,7 +30,22 @@ function App() {
     };
   }, []);
 
-  function runAction(action: "startFocus" | "pauseFocus" | "resumeFocus") {
+  function runAction(
+    action:
+      | "startFocus"
+      | "pauseFocus"
+      | "resumeFocus"
+      | "finishFocus"
+      | "resetFocus",
+  ) {
+    if (
+      action === "resetFocus" &&
+      !window.confirm(
+        "Resetar o foco atual? Ele será descartado e não aparecerá no histórico.",
+      )
+    ) {
+      return;
+    }
     void act(action).catch(() => {
       // The controller exposes command failures in its state.
     });
@@ -75,6 +91,7 @@ function App() {
             onAction={runAction}
             onRatioChange={changeRatio}
           />
+          <HistoryPanel history={snapshot?.history ?? []} />
 
           {error && (
             <p className="error-message" role="alert">
@@ -133,12 +150,16 @@ function App() {
   );
 }
 
-function statusLabel(phase: "idle" | "focusRunning" | "focusPaused") {
+function statusLabel(
+  phase: "idle" | "focusRunning" | "focusPaused" | "breakReady",
+) {
   switch (phase) {
     case "focusRunning":
       return "Foco em andamento";
     case "focusPaused":
       return "Foco pausado";
+    case "breakReady":
+      return "Descanso disponível";
     default:
       return "Pronto para focar";
   }
