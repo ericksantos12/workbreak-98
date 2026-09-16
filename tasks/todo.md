@@ -111,8 +111,8 @@ Dependências: T09. Arquivos: `src-tauri/src/service.rs`, `src-tauri/src/storage
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml service::tests`; `cargo test --manifest-path src-tauri/Cargo.toml storage::tests`; `npm run build`; testar encerramento forçado/reabertura com `npm run tauri dev` e dados de teste.
 
 ### CP3 — Recuperação do foco (T09–T10)
-- [ ] Preferência e foco pausado recuperam corretamente; checkpoints persistidos não regrediram estado.
-- [ ] Falha de escrita visível e conteúdo inválido preservado; evidência de crash revisada e aprovação humana registrada.
+- [x] Preferência e foco pausado recuperam corretamente; checkpoints persistidos não regrediram estado.
+- [x] Falha de escrita visível e conteúdo inválido preservado; evidência de recuperação revisada e aprovação humana registrada. Teste real de encerramento forçado permanece na validação final.
 
 ### T11 — Integrar suspensão ao serviço [M]
 Dependências: CP3. Arquivos: `src-tauri/src/power.rs`, `src-tauri/src/service.rs`, `src-tauri/src/timer.rs`, `src-tauri/src/lib.rs`.
@@ -327,3 +327,8 @@ Verificar: `npx vitest run`; `cargo test --manifest-path src-tauri/Cargo.toml`; 
 - Checkpoint não roda para sessão pausada/idle nem para documento bloqueado; estado `unavailable` tenta salvar novamente no próximo ciclo ativo.
 - Snapshot IPC agora inclui `persistenceStatus`; a UI avisa quando recuperação não está garantida ou quando dados inválidos impedem sobrescrita. Recuperação foi verificada em testes nativos com diretório isolado; encerramento forçado da janela real permanece para a validação desktop final.
 - Após `cargo fmt`, `cargo test --manifest-path src-tauri/Cargo.toml`: 33 testes passaram. `cargo check`, `npx vitest run` (7 testes) e `npm run build`: passaram.
+
+### 16/09/2026 — CP3 aprovado
+
+- Usuário confirmou que preferência e foco pausado recuperam corretamente e autorizou continuar.
+- Próxima fase liberada: suspensão, fechamento normal e instância única.
