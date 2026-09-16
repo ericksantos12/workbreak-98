@@ -4,11 +4,12 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     clock::{Clock, SystemClock},
-    timer::{FocusRatio, FocusTimer, TimerError, TimerState},
+    storage::{JsonStorage, LoadResult},
+    timer::{FocusRatio, FocusTimer, PersistedTimer, TimerError, TimerState},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -21,12 +22,21 @@ pub enum TimerPhase {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub enum PersistenceStatus {
+    Available,
+    Unavailable,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TimerSnapshot {
     pub revision: u32,
     pub phase: TimerPhase,
     pub focus_elapsed_ms: u64,
     pub ratio: u8,
     pub break_earned_ms: u64,
+    pub persistence_status: PersistenceStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,11 +74,13 @@ impl From<TimerError> for ServiceError {
 struct ServiceState {
     timer: FocusTimer,
     revision: u32,
+    persistence_status: PersistenceStatus,
 }
 
 pub struct TimerService<C: Clock> {
     clock: C,
     state: Mutex<ServiceState>,
+    storage: Option<JsonStorage>,
 }
 
 pub type AppTimerService = TimerService<SystemClock>;
@@ -80,7 +92,41 @@ impl<C: Clock> TimerService<C> {
             state: Mutex::new(ServiceState {
                 timer: FocusTimer::default(),
                 revision: 0,
+                persistence_status: PersistenceStatus::Unavailable,
             }),
+            storage: None,
+        }
+    }
+
+    pub fn from_storage(clock: C, storage: JsonStorage) -> Self {
+        let (timer, revision, persistence_status) = match storage.load::<AppDocument>() {
+            Ok(LoadResult::Missing) => (FocusTimer::default(), 0, PersistenceStatus::Available),
+            Ok(LoadResult::Loaded(document)) if document.revision < u32::MAX => {
+                match clock
+                    .now_100ns()
+                    .ok()
+                    .and_then(|now| FocusTimer::restore(document.timer, now).ok())
+                {
+                    Some(timer) => (timer, document.revision, PersistenceStatus::Available),
+                    None => (FocusTimer::default(), 0, PersistenceStatus::Blocked),
+                }
+            }
+            Ok(LoadResult::Loaded(_))
+            | Ok(LoadResult::Invalid(_))
+            | Ok(LoadResult::UnsupportedVersion(_)) => {
+                (FocusTimer::default(), 0, PersistenceStatus::Blocked)
+            }
+            Err(_) => (FocusTimer::default(), 0, PersistenceStatus::Unavailable),
+        };
+
+        Self {
+            clock,
+            state: Mutex::new(ServiceState {
+                timer,
+                revision,
+                persistence_status,
+            }),
+            storage: Some(storage),
         }
     }
 
@@ -114,6 +160,7 @@ impl<C: Clock> TimerService<C> {
 
         state.timer.set_ratio(ratio);
         state.revision = next_revision;
+        self.persist_at(&mut state, now_100ns);
         snapshot_at(&state, now_100ns)
     }
 
@@ -128,6 +175,7 @@ impl<C: Clock> TimerService<C> {
         let now_100ns = self.now_100ns()?;
         action(&mut state.timer, now_100ns)?;
         state.revision = next_revision;
+        self.persist_at(&mut state, now_100ns);
         snapshot_at(&state, now_100ns)
     }
 
@@ -141,6 +189,29 @@ impl<C: Clock> TimerService<C> {
         self.clock
             .now_100ns()
             .map_err(|error| ServiceError::Clock(error.to_string()))
+    }
+
+    fn persist_at(&self, state: &mut ServiceState, now_100ns: u64) {
+        if state.persistence_status == PersistenceStatus::Blocked {
+            return;
+        }
+        let Some(storage) = &self.storage else {
+            state.persistence_status = PersistenceStatus::Unavailable;
+            return;
+        };
+        let Ok(timer) = state.timer.persisted_at(now_100ns) else {
+            state.persistence_status = PersistenceStatus::Unavailable;
+            return;
+        };
+        let document = AppDocument {
+            revision: state.revision,
+            timer,
+        };
+        state.persistence_status = if storage.write(&document).is_ok() {
+            PersistenceStatus::Available
+        } else {
+            PersistenceStatus::Unavailable
+        };
     }
 
     #[cfg(test)]
@@ -161,7 +232,15 @@ fn snapshot_at(state: &ServiceState, now_100ns: u64) -> Result<TimerSnapshot, Se
         focus_elapsed_ms: state.timer.effective_at(now_100ns)? / 10_000,
         ratio: state.timer.ratio().value(),
         break_earned_ms: state.timer.earned_break_at(now_100ns)? / 10_000,
+        persistence_status: state.persistence_status,
     })
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppDocument {
+    revision: u32,
+    timer: PersistedTimer,
 }
 
 fn validate_revision(state: &ServiceState, expected: u32) -> Result<(), ServiceError> {
@@ -185,16 +264,43 @@ fn next_revision(state: &ServiceState) -> Result<u32, ServiceError> {
 #[cfg(test)]
 mod tests {
     use std::{
-        io,
+        fs, io,
+        path::PathBuf,
         sync::{
             atomic::{AtomicBool, AtomicU64, Ordering},
             Arc,
         },
     };
 
-    use crate::{clock::Clock, timer::FocusRatio};
+    use crate::{clock::Clock, storage::JsonStorage, timer::FocusRatio};
 
-    use super::{ServiceError, TimerPhase, TimerService};
+    use super::{PersistenceStatus, ServiceError, TimerPhase, TimerService};
+
+    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let id = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "workbreak-98-service-test-{}-{id}",
+                std::process::id()
+            ));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn storage(&self) -> JsonStorage {
+            JsonStorage::new(self.0.join("state.json"))
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[derive(Clone, Default)]
     struct FakeClock {
@@ -277,5 +383,52 @@ mod tests {
         assert_eq!(snapshot.revision, 2);
         assert_eq!(snapshot.ratio, 5);
         assert_eq!(snapshot.break_earned_ms, 6 * 60 * 1_000);
+    }
+
+    #[test]
+    fn persists_preference_and_recovers_running_focus_as_paused() {
+        let directory = TestDirectory::new();
+        let clock = FakeClock::default();
+        let service = TimerService::from_storage(clock.clone(), directory.storage());
+        service.start_focus(0).unwrap();
+        clock.set(10 * 60 * 10_000_000);
+        service.set_ratio(1, FocusRatio::Five).unwrap();
+        drop(service);
+
+        clock.set(123);
+        let recovered = TimerService::from_storage(clock, directory.storage());
+        let snapshot = recovered.snapshot().unwrap();
+
+        assert_eq!(snapshot.phase, TimerPhase::FocusPaused);
+        assert_eq!(snapshot.focus_elapsed_ms, 10 * 60 * 1_000);
+        assert_eq!(snapshot.ratio, 5);
+        assert_eq!(snapshot.persistence_status, PersistenceStatus::Available);
+    }
+
+    #[test]
+    fn invalid_document_blocks_automatic_overwrite() {
+        let directory = TestDirectory::new();
+        let path = directory.0.join("state.json");
+        let invalid = br#"{"version":1,"data":{"revision":0,"timer":{"phase":"idle","elapsed100ns":1,"ratio":3}}}"#;
+        fs::write(&path, invalid).unwrap();
+        let service = TimerService::from_storage(FakeClock::default(), directory.storage());
+
+        let started = service.start_focus(0).unwrap();
+
+        assert_eq!(started.phase, TimerPhase::FocusRunning);
+        assert_eq!(started.persistence_status, PersistenceStatus::Blocked);
+        assert_eq!(fs::read(path).unwrap(), invalid);
+    }
+
+    #[test]
+    fn write_failure_keeps_state_in_memory_and_reports_unavailable() {
+        let directory = TestDirectory::new();
+        fs::create_dir(directory.0.join("state.json")).unwrap();
+        let service = TimerService::from_storage(FakeClock::default(), directory.storage());
+
+        let snapshot = service.start_focus(0).unwrap();
+
+        assert_eq!(snapshot.phase, TimerPhase::FocusRunning);
+        assert_eq!(snapshot.persistence_status, PersistenceStatus::Unavailable);
     }
 }

@@ -1,5 +1,7 @@
 use std::{error::Error, fmt};
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusRatio {
     Three,
@@ -43,10 +45,27 @@ pub enum TimerState {
     },
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PersistedFocusPhase {
+    Idle,
+    Running,
+    Paused,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistedTimer {
+    pub phase: PersistedFocusPhase,
+    pub elapsed_100ns: u64,
+    pub ratio: u8,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerError {
     InvalidTransition,
     InvalidRatio,
+    InvalidPersistedState,
     TimeWentBackwards,
     DurationOverflow,
 }
@@ -56,6 +75,7 @@ impl fmt::Display for TimerError {
         match self {
             Self::InvalidTransition => formatter.write_str("invalid timer transition"),
             Self::InvalidRatio => formatter.write_str("unsupported focus ratio"),
+            Self::InvalidPersistedState => formatter.write_str("invalid persisted timer state"),
             Self::TimeWentBackwards => formatter.write_str("timer timestamp moved backwards"),
             Self::DurationOverflow => formatter.write_str("timer duration overflowed"),
         }
@@ -89,6 +109,34 @@ impl FocusTimer {
 
     pub fn state(&self) -> TimerState {
         self.state
+    }
+
+    pub fn restore(persisted: PersistedTimer, now_100ns: u64) -> Result<Self, TimerError> {
+        let ratio = FocusRatio::try_from(persisted.ratio)?;
+        let state = match persisted.phase {
+            PersistedFocusPhase::Idle if persisted.elapsed_100ns == 0 => TimerState::Idle,
+            PersistedFocusPhase::Idle => return Err(TimerError::InvalidPersistedState),
+            PersistedFocusPhase::Running | PersistedFocusPhase::Paused => TimerState::FocusPaused {
+                accumulated_100ns: persisted.elapsed_100ns,
+                paused_at_100ns: now_100ns,
+            },
+        };
+
+        Ok(Self { state, ratio })
+    }
+
+    pub fn persisted_at(&self, now_100ns: u64) -> Result<PersistedTimer, TimerError> {
+        let phase = match self.state {
+            TimerState::Idle => PersistedFocusPhase::Idle,
+            TimerState::FocusRunning { .. } => PersistedFocusPhase::Running,
+            TimerState::FocusPaused { .. } => PersistedFocusPhase::Paused,
+        };
+
+        Ok(PersistedTimer {
+            phase,
+            elapsed_100ns: self.effective_at(now_100ns)?,
+            ratio: self.ratio.value(),
+        })
     }
 
     pub fn ratio(&self) -> FocusRatio {
@@ -179,7 +227,9 @@ impl FocusTimer {
 
 #[cfg(test)]
 mod tests {
-    use super::{FocusRatio, FocusTimer, TimerError, TimerState};
+    use super::{
+        FocusRatio, FocusTimer, PersistedFocusPhase, PersistedTimer, TimerError, TimerState,
+    };
 
     const MINUTE: u64 = 60 * 10_000_000;
 
@@ -282,5 +332,55 @@ mod tests {
         assert_eq!(FocusRatio::try_from(4), Ok(FocusRatio::Four));
         assert_eq!(FocusRatio::try_from(5), Ok(FocusRatio::Five));
         assert_eq!(FocusRatio::try_from(2), Err(TimerError::InvalidRatio));
+    }
+
+    #[test]
+    fn restores_a_running_session_as_paused_at_the_new_clock() {
+        let persisted = PersistedTimer {
+            phase: PersistedFocusPhase::Running,
+            elapsed_100ns: 12_345,
+            ratio: 5,
+        };
+
+        let timer = FocusTimer::restore(persisted, 900).unwrap();
+
+        assert_eq!(timer.ratio(), FocusRatio::Five);
+        assert_eq!(timer.effective_at(900).unwrap(), 12_345);
+        assert_eq!(
+            timer.state(),
+            TimerState::FocusPaused {
+                accumulated_100ns: 12_345,
+                paused_at_100ns: 900,
+            }
+        );
+    }
+
+    #[test]
+    fn persists_only_consolidated_duration_not_the_process_anchor() {
+        let mut timer = FocusTimer::default();
+        timer.start(100).unwrap();
+
+        assert_eq!(
+            timer.persisted_at(500).unwrap(),
+            PersistedTimer {
+                phase: PersistedFocusPhase::Running,
+                elapsed_100ns: 400,
+                ratio: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_incoherent_persisted_idle_state() {
+        let result = FocusTimer::restore(
+            PersistedTimer {
+                phase: PersistedFocusPhase::Idle,
+                elapsed_100ns: 1,
+                ratio: 3,
+            },
+            0,
+        );
+
+        assert_eq!(result, Err(TimerError::InvalidPersistedState));
     }
 }

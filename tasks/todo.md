@@ -98,9 +98,9 @@ Verificar: `npx vitest run src/flowmodoro.test.ts`; `npx tsc --noEmit`; `npm run
 
 ### T09 — Persistir e recuperar foco/preferência [M]
 Dependências: CP2. Arquivos: `src-tauri/src/storage.rs`, `src-tauri/src/timer.rs`, `src-tauri/src/service.rs`, `src-tauri/src/lib.rs`.
-- [ ] Definir documento tipado/versionado para preferência, sessão e metadados; validar números/estado e usar app_local_data_dir em produção, caminho isolado em testes.
-- [ ] Salvar transições/preferência; carregar arquivo válido restaura foco ativo como pausado somente até duração consolidada, descartando âncora de execução anterior.
-- [ ] Falha mantém estado em memória e status de persistência no snapshot; conteúdo inválido/versão desconhecida bloqueia escrita automática e não é convertido silenciosamente em primeira execução.
+- [x] Definir documento tipado/versionado para preferência, sessão e metadados; validar números/estado e usar app_local_data_dir em produção, caminho isolado em testes.
+- [x] Salvar transições/preferência; carregar arquivo válido restaura foco ativo como pausado somente até duração consolidada, descartando âncora de execução anterior.
+- [x] Falha mantém estado em memória e status de persistência no snapshot; conteúdo inválido/versão desconhecida bloqueia escrita automática e não é convertido silenciosamente em primeira execução.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml storage::tests`; `cargo test --manifest-path src-tauri/Cargo.toml service::tests`; `cargo check --manifest-path src-tauri/Cargo.toml`.
 
 ### T10 — Checkpoints ordenados e recuperação após crash [M]
@@ -311,3 +311,11 @@ Verificar: `npx vitest run`; `cargo test --manifest-path src-tauri/Cargo.toml`; 
 
 - Usuário autorizou continuar a implementação após revisar foco, proporções e interface retro.
 - Próxima fase liberada: persistência e recuperação do foco a partir da T09.
+
+### 15/09/2026 — T09 concluída
+
+- Testes RED definiram serialização consolidada, recuperação pausada, preferência, falha de escrita e bloqueio de documento incoerente.
+- Documento versionado persiste revisão, fase, duração consolidada e proporção; timestamps monotônicos do processo não são gravados nem reutilizados.
+- `app_local_data_dir()/state.json` é carregado no setup Tauri. Sessão ativa volta pausada; documento inválido permanece intacto e impede gravações automáticas.
+- Falha de I/O mantém ações em memória e retorna `persistenceStatus=unavailable`; estado inválido retorna `blocked`.
+- Após `cargo fmt`, `cargo test --manifest-path src-tauri/Cargo.toml`: 30 testes passaram. `cargo check`, `npx vitest run` (7 testes) e `npm run build`: passaram.
