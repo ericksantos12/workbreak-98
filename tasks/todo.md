@@ -161,7 +161,7 @@ Dependências: CP4. Arquivos: `src-tauri/src/timer.rs`, `src-tauri/src/storage.r
 - [x] Finalizar foco ativo/pausado cria registro com identificador, data/hora civil, foco efetivo, proporção final e descanso calculado; sessão vira breakReady no mesmo documento.
 - [x] Reset em foco ativo/pausado descarta a sessão sem criar histórico ou descanso, restaura o timer a zero e persiste a transição; comandos repetidos não criam efeitos extras.
 - [x] Foco zero volta a idle sem registro; comandos repetidos não duplicam histórico; IDs não dependem só de data civil e são validados na leitura.
-- [ ] Descanso disponível não diminui com espera; preferência posterior afeta apenas próximo foco. Restauro de breakReady preserva histórico/descanso congelados.
+- [x] Descanso disponível não diminui com espera; preferência posterior afeta apenas próximo foco. Restauro de breakReady preserva histórico/descanso congelados.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml timer::tests`; `cargo test --manifest-path src-tauri/Cargo.toml storage::tests`; `cargo test --manifest-path src-tauri/Cargo.toml service::tests`.
 
 ### T15 — Exibir finalização e histórico na interface [M]
