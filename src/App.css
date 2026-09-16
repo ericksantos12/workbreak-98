@@ -54,6 +54,12 @@ select:focus-visible {
   gap: 12px;
 }
 
+.timer-dashboard {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .timer-panel fieldset {
   min-width: 0;
   margin: 0;
@@ -65,7 +71,7 @@ select:focus-visible {
   color: #00f020;
   background: #050805;
   font-family: "Courier New", monospace;
-  font-size: clamp(2rem, 10vw, 4.5rem);
+  font-size: clamp(1.25rem, 5vw, 3rem);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.04em;
@@ -76,6 +82,11 @@ select:focus-visible {
     inset 1px 1px #0a0a0a,
     inset -2px -2px #dfdfdf,
     inset 2px 2px #808080;
+}
+
+.break-balance .timer-readout {
+  color: #ffe140;
+  text-shadow: 0 0 8px #a87000;
 }
 
 .timer-meta {
@@ -93,13 +104,6 @@ select:focus-visible {
 
 .timer-actions button {
   min-width: 110px;
-}
-
-.history-list {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding-left: 24px;
 }
 
 .error-message {
@@ -126,6 +130,10 @@ select:focus-visible {
   .timer-meta,
   .timer-actions {
     flex-direction: column;
+  }
+
+  .timer-dashboard {
+    grid-template-columns: 1fr;
   }
 
   .timer-actions button {

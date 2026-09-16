@@ -2,7 +2,6 @@ use std::{
     error::Error,
     fmt,
     sync::{Mutex, MutexGuard},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
@@ -42,18 +41,7 @@ pub struct TimerSnapshot {
     pub ratio: u8,
     pub break_earned_ms: u64,
     pub break_remaining_ms: u64,
-    pub history: Vec<FocusHistoryEntry>,
     pub persistence_status: PersistenceStatus,
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FocusHistoryEntry {
-    pub id: u64,
-    pub completed_at_unix_ms: u64,
-    pub focus_elapsed_ms: u64,
-    pub ratio: u8,
-    pub break_earned_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,8 +87,6 @@ struct ServiceState {
     revision: u32,
     persistence_status: PersistenceStatus,
     power_available: bool,
-    history: Vec<FocusHistoryEntry>,
-    next_history_id: u64,
 }
 
 pub struct TimerService<C: Clock> {
@@ -120,64 +106,31 @@ impl<C: Clock> TimerService<C> {
                 revision: 0,
                 persistence_status: PersistenceStatus::Unavailable,
                 power_available: true,
-                history: Vec::new(),
-                next_history_id: 1,
             }),
             storage: None,
         }
     }
 
     pub fn from_storage(clock: C, storage: JsonStorage) -> Self {
-        let (timer, revision, history, next_history_id, persistence_status) =
-            match storage.load::<AppDocument>() {
-                Ok(LoadResult::Missing) => (
-                    FocusTimer::default(),
-                    0,
-                    Vec::new(),
-                    1,
-                    PersistenceStatus::Available,
-                ),
-                Ok(LoadResult::Loaded(document))
-                    if document.revision < u32::MAX && document.is_valid() =>
+        let (timer, revision, persistence_status) = match storage.load::<AppDocument>() {
+            Ok(LoadResult::Missing) => (FocusTimer::default(), 0, PersistenceStatus::Available),
+            Ok(LoadResult::Loaded(document)) if document.revision < u32::MAX => {
+                match clock
+                    .now_100ns()
+                    .ok()
+                    .and_then(|now| FocusTimer::restore(document.timer, now).ok())
                 {
-                    match clock
-                        .now_100ns()
-                        .ok()
-                        .and_then(|now| FocusTimer::restore(document.timer, now).ok())
-                    {
-                        Some(timer) => (
-                            timer,
-                            document.revision,
-                            document.history,
-                            document.next_history_id,
-                            PersistenceStatus::Available,
-                        ),
-                        None => (
-                            FocusTimer::default(),
-                            0,
-                            Vec::new(),
-                            1,
-                            PersistenceStatus::Blocked,
-                        ),
-                    }
+                    Some(timer) => (timer, document.revision, PersistenceStatus::Available),
+                    None => (FocusTimer::default(), 0, PersistenceStatus::Blocked),
                 }
-                Ok(LoadResult::Loaded(_))
-                | Ok(LoadResult::Invalid(_))
-                | Ok(LoadResult::UnsupportedVersion(_)) => (
-                    FocusTimer::default(),
-                    0,
-                    Vec::new(),
-                    1,
-                    PersistenceStatus::Blocked,
-                ),
-                Err(_) => (
-                    FocusTimer::default(),
-                    0,
-                    Vec::new(),
-                    1,
-                    PersistenceStatus::Unavailable,
-                ),
-            };
+            }
+            Ok(LoadResult::Loaded(_))
+            | Ok(LoadResult::Invalid(_))
+            | Ok(LoadResult::UnsupportedVersion(_)) => {
+                (FocusTimer::default(), 0, PersistenceStatus::Blocked)
+            }
+            Err(_) => (FocusTimer::default(), 0, PersistenceStatus::Unavailable),
+        };
 
         Self {
             clock,
@@ -186,8 +139,6 @@ impl<C: Clock> TimerService<C> {
                 revision,
                 persistence_status,
                 power_available: true,
-                history,
-                next_history_id,
             }),
             storage: Some(storage),
         }
@@ -217,25 +168,11 @@ impl<C: Clock> TimerService<C> {
         validate_revision(&state, expected_revision)?;
         let next_revision = next_revision(&state)?;
         let now_100ns = self.now_100ns()?;
-        let focus_elapsed_ms = state.timer.effective_at(now_100ns)? / 10_000;
-        let ratio = state.timer.ratio().value();
-        let break_earned_ms = state.timer.earned_break_at(now_100ns)? / 10_000;
         state.timer.finish(now_100ns)?;
-        state.revision = next_revision;
-        if focus_elapsed_ms > 0 {
-            let id = state.next_history_id;
-            state.next_history_id = id.checked_add(1).ok_or(ServiceError::RevisionOverflow)?;
-            state.history.insert(
-                0,
-                FocusHistoryEntry {
-                    id,
-                    completed_at_unix_ms: current_unix_ms(),
-                    focus_elapsed_ms,
-                    ratio,
-                    break_earned_ms,
-                },
-            );
+        if matches!(state.timer.state(), TimerState::BreakReady { .. }) {
+            state.timer.start_break(now_100ns)?;
         }
+        state.revision = next_revision;
         self.persist_at(&mut state, now_100ns);
         snapshot_at(&state, now_100ns)
     }
@@ -400,8 +337,6 @@ impl<C: Clock> TimerService<C> {
         let document = AppDocument {
             revision: state.revision,
             timer,
-            history: state.history.clone(),
-            next_history_id: state.next_history_id,
         };
         state.persistence_status = if storage.write(&document).is_ok() {
             PersistenceStatus::Available
@@ -441,7 +376,6 @@ fn snapshot_at(state: &ServiceState, now_100ns: u64) -> Result<TimerSnapshot, Se
         ratio: state.timer.ratio().value(),
         break_earned_ms: state.timer.earned_break_at(now_100ns)? / 10_000,
         break_remaining_ms: state.timer.break_remaining_at(now_100ns)? / 10_000,
-        history: state.history.clone(),
         persistence_status: state.persistence_status,
     })
 }
@@ -451,38 +385,6 @@ fn snapshot_at(state: &ServiceState, now_100ns: u64) -> Result<TimerSnapshot, Se
 struct AppDocument {
     revision: u32,
     timer: PersistedTimer,
-    #[serde(default)]
-    history: Vec<FocusHistoryEntry>,
-    #[serde(default = "first_history_id")]
-    next_history_id: u64,
-}
-
-impl AppDocument {
-    fn is_valid(&self) -> bool {
-        self.next_history_id != 0
-            && self
-                .history
-                .iter()
-                .all(|entry| entry.id != 0 && entry.id < self.next_history_id)
-            && self.history.iter().enumerate().all(|(index, entry)| {
-                self.history[..index]
-                    .iter()
-                    .all(|other| other.id != entry.id)
-            })
-    }
-}
-
-fn first_history_id() -> u64 {
-    1
-}
-
-fn current_unix_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(u64::MAX)
 }
 
 fn validate_revision(state: &ServiceState, expected: u32) -> Result<(), ServiceError> {
@@ -883,7 +785,7 @@ mod tests {
     }
 
     #[test]
-    fn finishing_focus_persists_one_frozen_history_entry_and_break_ready() {
+    fn finishing_focus_starts_a_persisted_break() {
         let directory = TestDirectory::new();
         let clock = FakeClock::default();
         let service = TimerService::from_storage(clock.clone(), directory.storage());
@@ -892,20 +794,16 @@ mod tests {
 
         let snapshot = service.finish_focus(1).unwrap();
 
-        assert_eq!(snapshot.phase, TimerPhase::BreakReady);
+        assert_eq!(snapshot.phase, TimerPhase::BreakRunning);
         assert_eq!(snapshot.focus_elapsed_ms, 30 * 60 * 1_000);
         assert_eq!(snapshot.break_earned_ms, 10 * 60 * 1_000);
-        assert_eq!(snapshot.history.len(), 1);
-        assert_eq!(snapshot.history[0].id, 1);
-        assert_eq!(snapshot.history[0].ratio, 3);
-        assert_eq!(snapshot.history[0].focus_elapsed_ms, 30 * 60 * 1_000);
         drop(service);
         let recovered = TimerService::from_storage(clock, directory.storage());
-        assert_eq!(recovered.snapshot().unwrap().history.len(), 1);
+        assert_eq!(recovered.snapshot().unwrap().phase, TimerPhase::BreakPaused);
     }
 
     #[test]
-    fn reset_discards_active_focus_without_creating_history() {
+    fn reset_discards_active_focus() {
         let directory = TestDirectory::new();
         let clock = FakeClock::default();
         let service = TimerService::from_storage(clock.clone(), directory.storage());
@@ -916,28 +814,25 @@ mod tests {
 
         assert_eq!(snapshot.phase, TimerPhase::Idle);
         assert_eq!(snapshot.focus_elapsed_ms, 0);
-        assert!(snapshot.history.is_empty());
         drop(service);
         let recovered = TimerService::from_storage(clock, directory.storage());
         let recovered = recovered.snapshot().unwrap();
         assert_eq!(recovered.phase, TimerPhase::Idle);
-        assert!(recovered.history.is_empty());
     }
 
     #[test]
-    fn finishing_zero_focus_returns_to_idle_without_history() {
+    fn finishing_zero_focus_returns_to_idle() {
         let service = TimerService::new(FakeClock::default());
         service.start_focus(0).unwrap();
 
         let snapshot = service.finish_focus(1).unwrap();
 
         assert_eq!(snapshot.phase, TimerPhase::Idle);
-        assert!(snapshot.history.is_empty());
         assert!(service.finish_focus(1).is_err());
     }
 
     #[test]
-    fn duplicate_history_ids_block_recovery_without_overwriting_data() {
+    fn old_history_fields_are_ignored_on_recovery() {
         let directory = TestDirectory::new();
         let storage = directory.storage();
         storage
@@ -956,12 +851,12 @@ mod tests {
 
         assert_eq!(
             service.snapshot().unwrap().persistence_status,
-            PersistenceStatus::Blocked
+            PersistenceStatus::Available
         );
     }
 
     #[test]
-    fn changing_ratio_after_finish_preserves_the_granted_break_and_history() {
+    fn changing_ratio_after_finish_preserves_the_granted_break() {
         let directory = TestDirectory::new();
         let clock = FakeClock::default();
         let service = TimerService::from_storage(clock.clone(), directory.storage());
@@ -971,14 +866,13 @@ mod tests {
 
         let snapshot = service.set_ratio(2, FocusRatio::Five).unwrap();
 
-        assert_eq!(snapshot.phase, TimerPhase::BreakReady);
+        assert_eq!(snapshot.phase, TimerPhase::BreakRunning);
         assert_eq!(snapshot.ratio, 5);
         assert_eq!(snapshot.break_earned_ms, 10 * 60 * 1_000);
-        assert_eq!(snapshot.history[0].ratio, 3);
         drop(service);
         let recovered = TimerService::from_storage(clock, directory.storage());
         let recovered = recovered.snapshot().unwrap();
-        assert_eq!(recovered.phase, TimerPhase::BreakReady);
+        assert_eq!(recovered.phase, TimerPhase::BreakPaused);
         assert_eq!(recovered.ratio, 5);
         assert_eq!(recovered.break_earned_ms, 10 * 60 * 1_000);
     }
@@ -990,16 +884,15 @@ mod tests {
         service.start_focus(0).unwrap();
         clock.set(3 * 60 * 10_000_000);
         service.finish_focus(1).unwrap();
-        service.start_break(2).unwrap();
         clock.set(4 * 60 * 10_000_000);
 
         let completed = service.snapshot().unwrap();
 
         assert_eq!(completed.phase, TimerPhase::BreakCompleted);
         assert_eq!(completed.break_remaining_ms, 0);
-        assert_eq!(completed.revision, 4);
+        assert_eq!(completed.revision, 3);
         assert_eq!(
-            service.start_focus(4).unwrap().phase,
+            service.start_focus(3).unwrap().phase,
             TimerPhase::FocusRunning
         );
     }
@@ -1012,7 +905,6 @@ mod tests {
         service.start_focus(0).unwrap();
         clock.set(30 * 60 * 10_000_000);
         service.finish_focus(1).unwrap();
-        service.start_break(2).unwrap();
         clock.set(35 * 60 * 10_000_000);
         service.checkpoint().unwrap();
         drop(service);
@@ -1021,7 +913,6 @@ mod tests {
         let snapshot = recovered.snapshot().unwrap();
         assert_eq!(snapshot.phase, TimerPhase::BreakPaused);
         assert_eq!(snapshot.break_remaining_ms, 5 * 60 * 1_000);
-        assert_eq!(snapshot.history.len(), 1);
     }
 
     #[test]
@@ -1032,7 +923,6 @@ mod tests {
         service.start_focus(0).unwrap();
         clock.set(30 * 60 * 10_000_000);
         service.finish_focus(1).unwrap();
-        service.start_break(2).unwrap();
         clock.set(35 * 60 * 10_000_000);
 
         let snapshot = service.prepare_close().unwrap();

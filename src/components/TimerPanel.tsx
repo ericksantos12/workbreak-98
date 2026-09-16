@@ -21,19 +21,37 @@ function TimerPanel({
   onRatioChange,
 }: TimerPanelProps) {
   const disabled = isLoading || isActionPending || !snapshot;
+  const breakElapsedMs = Math.max(
+    0,
+    (snapshot?.breakEarnedMs ?? 0) - (snapshot?.breakRemainingMs ?? 0),
+  );
 
   return (
     <section className="timer-panel" aria-labelledby="focus-title">
-      <fieldset>
-        <legend id="focus-title">Cronômetro de foco</legend>
-        <p className="timer-readout" aria-label="Tempo de foco decorrido">
-          {formatElapsedTime(snapshot?.focusElapsedMs ?? 0)}
-        </p>
-        <p className="timer-meta">
-          <span>Modo: tempo livre</span>
-          <strong>{phaseLabel(snapshot?.phase)}</strong>
-        </p>
-      </fieldset>
+      <div className="timer-dashboard">
+        <fieldset>
+          <legend id="focus-title">Foco</legend>
+          <p className="timer-readout" aria-label="Tempo de foco decorrido">
+            {formatElapsedTime(snapshot?.focusElapsedMs ?? 0)}
+          </p>
+        </fieldset>
+        <fieldset className="break-balance">
+          <legend>Saldo de descanso</legend>
+          <p className="timer-readout" aria-label="Saldo de descanso restante">
+            {formatRemainingTime(snapshot?.breakRemainingMs ?? 0)}
+          </p>
+        </fieldset>
+        <fieldset>
+          <legend>Descanso decorrido</legend>
+          <p className="timer-readout" aria-label="Tempo de descanso decorrido">
+            {formatElapsedTime(breakElapsedMs)}
+          </p>
+        </fieldset>
+      </div>
+      <p className="timer-meta">
+        <span>Modo: tempo livre</span>
+        <strong>{phaseLabel(snapshot?.phase)}</strong>
+      </p>
 
       <div className="field-row">
         <label htmlFor="focus-ratio">Proporção foco/descanso:</label>
@@ -51,22 +69,7 @@ function TimerPanel({
         </select>
       </div>
 
-      <fieldset>
-        <legend>Descanso conquistado</legend>
-        <p className="timer-meta">
-          <strong>{formatElapsedTime(snapshot?.breakEarnedMs ?? 0)}</strong>
-          <span>Proporção atual: {snapshot?.ratio ?? 3}:1</span>
-        </p>
-      </fieldset>
-
-      {snapshot?.phase.startsWith("break") && (
-        <fieldset>
-          <legend>Descanso</legend>
-          <p className="timer-readout" aria-label="Tempo de descanso restante">
-            {formatRemainingTime(snapshot.breakRemainingMs)}
-          </p>
-        </fieldset>
-      )}
+      <p className="timer-meta">Proporção atual: {snapshot?.ratio ?? 3}:1</p>
 
       <div className="timer-actions" aria-label="Controles do foco">
         {(!snapshot || snapshot.phase === "idle") && (
@@ -130,16 +133,6 @@ function TimerPanel({
             </button>
           </>
         )}
-        {snapshot?.phase === "breakReady" && (
-          <button
-            className="default"
-            type="button"
-            disabled={disabled}
-            onClick={() => onAction("startBreak")}
-          >
-            Iniciar descanso
-          </button>
-        )}
         {snapshot?.phase === "breakRunning" && (
           <>
             <button
@@ -154,7 +147,7 @@ function TimerPanel({
               disabled={disabled}
               onClick={() => onAction("endBreak")}
             >
-              Encerrar descanso
+              Finalizar descanso
             </button>
           </>
         )}
@@ -173,7 +166,7 @@ function TimerPanel({
               disabled={disabled}
               onClick={() => onAction("endBreak")}
             >
-              Encerrar descanso
+              Finalizar descanso
             </button>
           </>
         )}

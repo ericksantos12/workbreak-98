@@ -156,6 +156,18 @@ Verificar: `cargo check --manifest-path src-tauri/Cargo.toml`; `npm run tauri de
 
 ## E — Finalização e histórico (E1/E2 do plano)
 
+### Alteração aprovada em 16/09/2026
+
+- Remover completamente o histórico de foco, inclusive do documento persistido e da interface.
+- Finalizar foco inicia descanso automaticamente. A tela mantém três timers sempre visíveis: foco, saldo de descanso e descanso decorrido; o botão de finalizar alterna para finalizar descanso.
+
+### 16/09/2026 — fluxo visual revisado
+
+- Histórico removido do estado, IPC, persistência e interface. Campos de histórico de documentos antigos são ignorados e não voltam a ser gravados.
+- Ao finalizar foco, o descanso proporcional começa imediatamente. O saldo central diminui enquanto o timer de descanso à direita cresce.
+- Foco, saldo e descanso decorrido permanecem lado a lado em desktop; em telas estreitas passam a uma coluna para preservar legibilidade.
+- `cargo test`: 57 testes Rust passaram; `cargo check`, `npm run build` e 7 testes Vitest passaram.
+
 ### T14 — Finalizar foco com histórico transacional [M]
 Dependências: CP4. Arquivos: `src-tauri/src/timer.rs`, `src-tauri/src/storage.rs`, `src-tauri/src/service.rs`.
 - [x] Finalizar foco ativo/pausado cria registro com identificador, data/hora civil, foco efetivo, proporção final e descanso calculado; sessão vira breakReady no mesmo documento.

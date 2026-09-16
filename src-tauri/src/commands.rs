@@ -255,14 +255,14 @@ mod tests {
         )
         .unwrap();
 
-        let started = dispatch_action(
+        let running = dispatch_action(
             &service,
-            TimerAction::StartBreak {
+            TimerAction::EndBreak {
                 expected_revision: 2,
             },
         )
         .unwrap();
-        assert_eq!(started.phase, TimerPhase::BreakRunning);
+        assert_eq!(running.phase, TimerPhase::BreakCompleted);
     }
 
     #[test]

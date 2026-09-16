@@ -20,16 +20,7 @@ export interface TimerSnapshot {
   ratio: FocusRatio;
   breakEarnedMs: number;
   breakRemainingMs: number;
-  history: FocusHistoryEntry[];
   persistenceStatus: PersistenceStatus;
-}
-
-export interface FocusHistoryEntry {
-  id: number;
-  completedAtUnixMs: number;
-  focusElapsedMs: number;
-  ratio: FocusRatio;
-  breakEarnedMs: number;
 }
 
 export type TimerAction =

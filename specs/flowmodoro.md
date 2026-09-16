@@ -12,10 +12,9 @@ Aplicativo desktop Tauri para Windows para trabalhar por tempo livre e obter des
 - Proporções disponíveis: 3:1 (padrão), 4:1 e 5:1.
 - Durante o foco, mudar a proporção recalcula o descanso de todo o foco efetivo atual.
 - Exibir foco transcorrido e descanso conquistado em tempo real.
-- Finalizar foco registra a sessão e disponibiliza descanso; a contagem regressiva começa manualmente.
+- Finalizar foco inicia automaticamente o descanso proporcional; o mesmo controle passa a finalizar o descanso.
 - Descanso pertence à sessão atual, sem banco transferido entre sessões.
-- Histórico local simples: data/hora, foco efetivo, proporção final e descanso calculado. Registrar ao finalizar foco, não ao concluir descanso.
-- Persistir preferências, histórico e sessão atual localmente.
+- Não há histórico de foco no produto. Persistir apenas preferências e sessão atual localmente.
 - Segundo plano conta normalmente. Fechamento e suspensão do computador não contam; recuperar pausado.
 - Sem versão web de produto, contas, sincronização, edição/exportação do histórico, sons ou notificações no MVP.
 
@@ -44,8 +43,8 @@ Aplicativo desktop Tauri para Windows para trabalhar por tempo livre e obter des
 1. Sem sessão: iniciar foco.
 2. Foco ativo: pausar ou finalizar; proporção editável e ganho recalculado.
 3. Foco pausado: retomar ou finalizar; proporção também recalcula o ganho.
-4. Foco finalizado: histórico gravado uma única vez; descanso disponível aguardando início manual.
-5. Descanso ativo: contagem regressiva até zero.
+4. Finalizar foco inicia imediatamente o descanso proporcional.
+5. Descanso ativo: o saldo conquistado é consumido regressivamente enquanto o tempo descansado cresce.
 6. Recuperação de descanso interrompido: descanso pausado com ação de retomar.
 7. Descanso concluído: novo foco depende de ação manual, sem ciclo automático.
 

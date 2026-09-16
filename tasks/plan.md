@@ -6,7 +6,7 @@ Arquitetura, dependências Rust e sequência/checkpoints aprovados. Este documen
 
 ## Resultado esperado
 
-Entregar o ciclo foco → descanso manual → novo foco, com proporção dinâmica, histórico e recuperação local, usando React/Tauri e 98.css. Minimização não pausa; suspensão e fechamento pausam. Windows é a plataforma do MVP, não uma promessa de compatibilidade com Windows 98.
+Entregar o ciclo foco → descanso automático → novo foco, com proporção dinâmica e recuperação local, usando React/Tauri e 98.css. Minimização não pausa; suspensão e fechamento pausam. Windows é a plataforma do MVP, não uma promessa de compatibilidade com Windows 98.
 
 ## Decisões arquiteturais aprovadas
 
@@ -17,7 +17,7 @@ Entregar o ciclo foco → descanso manual → novo foco, com proporção dinâmi
 - React recebe snapshots autoritativos. Não persiste sessão em localStorage nem mantém um segundo cronômetro de negócio.
 - Estados: idle, focusRunning, focusPaused, breakReady, breakRunning, breakPaused e breakCompleted. Encerrar/pular descanso leva a breakCompleted; foco zero volta a idle.
 - Ações explícitas: iniciar/pausar/retomar/finalizar/resetar foco, mudar proporção, iniciar/pausar/retomar/encerrar descanso. Reset descarta o foco em andamento sem registrar histórico ou descanso. Repetições fora de estado válido não criam transições extras.
-- Snapshot contém revisão crescente, estado, proporção preferida, durações calculadas, histórico e situação da persistência. Comandos validam a revisão esperada para rejeitar ações obsoletas; avanço temporal de projeção não precisa incrementar a revisão de transição.
+- Snapshot contém revisão crescente, estado, proporção preferida, durações calculadas e situação da persistência. Comandos validam a revisão esperada para rejeitar ações obsoletas; avanço temporal de projeção não precisa incrementar a revisão de transição.
 - Uma requisição de atualização visual por vez, aproximadamente a cada 250 ms enquanto visível; respostas obsoletas são ignoradas. Ao voltar à janela, buscar snapshot imediato. Intervalos nunca somam segundos.
 - Conclusão do descanso é normalizada pelo serviço ao consultar/agir/checkpointar, antes de aplicar novos comandos; término lógico é limitado à duração concedida.
 
@@ -34,8 +34,8 @@ Entregar o ciclo foco → descanso manual → novo foco, com proporção dinâmi
 ### 3. Persistência local transacional por snapshot
 
 - JSON versionado em `app.path().app_local_data_dir()`, acessado somente por Rust. Reutilizar serde/serde_json existentes.
-- Persistir preferência, sessão, histórico e próximo identificador em um único documento. Identificadores não dependem exclusivamente de data civil.
-- Na finalização do foco, inserir histórico e transformar sessão em descanso disponível na mesma transição/documento.
+- Persistir preferência e sessão em um único documento.
+- Na finalização do foco, iniciar o descanso proporcional na mesma transição/documento.
 - Checkpoint consolidado aproximadamente a cada segundo enquanto ativo; também salvar cada transição e mudança de preferência. Apenas um escritor; nunca permitir que checkpoint antigo sobrescreva transição nova.
 - Gravar temporário no mesmo diretório, sincronizar e substituir destino com operação adequada ao Windows. Não assumir que remover o arquivo antigo antes de renomear é atômico. Provar substituição de arquivo existente no checkpoint inicial; isolar detalhes Win32 no adaptador de armazenamento.
 - Ao reabrir, estados ativos viram pausados com a duração do último snapshot válido; não adicionar o período entre gravação e reabertura. Não reutilizar âncora monotônica persistida.
@@ -54,7 +54,7 @@ Entregar o ciclo foco → descanso manual → novo foco, com proporção dinâmi
 
 - Importar 98.css antes dos ajustes locais. Substituir tela e CSS do starter, incluindo estilos globais/dark mode conflitantes.
 - `App` coordena a apresentação; cliente IPC e hook cuidam de snapshots, erros e cleanup compatível com StrictMode.
-- Painéis de timer/ações, preferência de proporção e histórico. HH:MM:SS, foco/ganho truncados em segundos, restante arredondado para cima; precisão de negócio permanece em milissegundos.
+- Três timers sempre visíveis para foco, saldo de descanso e descanso decorrido, além das ações e preferência de proporção. HH:MM:SS, foco/ganho truncados em segundos, restante arredondado para cima; precisão de negócio permanece em milissegundos.
 - Mostrar onde a proporção se aplica: foco atual durante foco; próximo foco após finalização. Histórico usa proporção congelada.
 - Labels em português, controles semânticos, estado textual, foco visível, rolagem em 800 × 600. Timer não anuncia cada tick em live region; mensagens de estado/erro podem anunciar mudanças.
 - Comandos pendentes desabilitam ações conflitantes; mostrar indisponibilidade do backend em execução apenas no navegador, sem simular sucesso.
