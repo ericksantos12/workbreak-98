@@ -1,4 +1,5 @@
 import "98.css";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 import TimerPanel from "./components/TimerPanel";
 import { useFlowmodoro } from "./useFlowmodoro";
@@ -22,9 +23,21 @@ function App() {
   return (
     <main className="desktop-shell">
       <section className="window app-window" aria-labelledby="app-title">
-        <div className="title-bar">
-          <div className="title-bar-text" id="app-title">
+        <div className="title-bar" data-tauri-drag-region>
+          <div className="title-bar-text" id="app-title" data-tauri-drag-region>
             Flowmodoro
+          </div>
+          <div className="title-bar-controls">
+            <button
+              type="button"
+              aria-label="Minimize"
+              onClick={() => void getCurrentWindow().minimize()}
+            />
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => void getCurrentWindow().close()}
+            />
           </div>
         </div>
 
