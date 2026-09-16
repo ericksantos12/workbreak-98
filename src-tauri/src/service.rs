@@ -20,6 +20,9 @@ pub enum TimerPhase {
     FocusRunning,
     FocusPaused,
     BreakReady,
+    BreakRunning,
+    BreakPaused,
+    BreakCompleted,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -38,6 +41,7 @@ pub struct TimerSnapshot {
     pub focus_elapsed_ms: u64,
     pub ratio: u8,
     pub break_earned_ms: u64,
+    pub break_remaining_ms: u64,
     pub history: Vec<FocusHistoryEntry>,
     pub persistence_status: PersistenceStatus,
 }
@@ -190,8 +194,9 @@ impl<C: Clock> TimerService<C> {
     }
 
     pub fn snapshot(&self) -> Result<TimerSnapshot, ServiceError> {
-        let state = self.lock_state()?;
+        let mut state = self.lock_state()?;
         let now_100ns = self.now_100ns()?;
+        self.normalize_at(&mut state, now_100ns)?;
         snapshot_at(&state, now_100ns)
     }
 
@@ -246,15 +251,32 @@ impl<C: Clock> TimerService<C> {
         snapshot_at(&state, now_100ns)
     }
 
+    pub fn start_break(&self, expected_revision: u32) -> Result<TimerSnapshot, ServiceError> {
+        self.transition(expected_revision, false, FocusTimer::start_break)
+    }
+
+    pub fn pause_break(&self, expected_revision: u32) -> Result<TimerSnapshot, ServiceError> {
+        self.transition(expected_revision, false, FocusTimer::pause_break)
+    }
+
+    pub fn resume_break(&self, expected_revision: u32) -> Result<TimerSnapshot, ServiceError> {
+        self.transition(expected_revision, false, FocusTimer::resume_break)
+    }
+
+    pub fn end_break(&self, expected_revision: u32) -> Result<TimerSnapshot, ServiceError> {
+        self.transition(expected_revision, false, FocusTimer::end_break)
+    }
+
     pub fn set_ratio(
         &self,
         expected_revision: u32,
         ratio: FocusRatio,
     ) -> Result<TimerSnapshot, ServiceError> {
         let mut state = self.lock_state()?;
+        let now_100ns = self.now_100ns()?;
+        self.normalize_at(&mut state, now_100ns)?;
         validate_revision(&state, expected_revision)?;
         let next_revision = next_revision(&state)?;
-        let now_100ns = self.now_100ns()?;
 
         state.timer.set_ratio(ratio);
         state.revision = next_revision;
@@ -264,32 +286,36 @@ impl<C: Clock> TimerService<C> {
 
     pub fn checkpoint(&self) -> Result<(), ServiceError> {
         let mut state = self.lock_state()?;
+        let now_100ns = self.now_100ns()?;
+        self.normalize_at(&mut state, now_100ns)?;
         if state.persistence_status == PersistenceStatus::Blocked
-            || !matches!(state.timer.state(), TimerState::FocusRunning { .. })
+            || !matches!(
+                state.timer.state(),
+                TimerState::FocusRunning { .. } | TimerState::BreakRunning { .. }
+            )
         {
             return Ok(());
         }
-
-        let now_100ns = self.now_100ns()?;
         self.persist_at(&mut state, now_100ns);
         Ok(())
     }
 
     pub fn pause_for_suspend(&self, at_100ns: u64) -> Result<(), ServiceError> {
         let mut state = self.lock_state()?;
-        let TimerState::FocusRunning {
-            started_at_100ns, ..
-        } = state.timer.state()
-        else {
-            return Ok(());
-        };
-        if at_100ns < started_at_100ns {
-            return Ok(());
+        match state.timer.state() {
+            TimerState::FocusRunning {
+                started_at_100ns, ..
+            } if at_100ns >= started_at_100ns => {
+                state.timer.pause(at_100ns)?;
+            }
+            TimerState::BreakRunning {
+                started_at_100ns, ..
+            } if at_100ns >= started_at_100ns => {
+                state.timer.pause_break(at_100ns)?;
+            }
+            _ => return Ok(()),
         }
-
-        let next_revision = next_revision(&state)?;
-        state.timer.pause(at_100ns)?;
-        state.revision = next_revision;
+        state.revision = next_revision(&state)?;
         self.persist_at(&mut state, at_100ns);
         Ok(())
     }
@@ -302,9 +328,17 @@ impl<C: Clock> TimerService<C> {
     pub fn prepare_close(&self) -> Result<TimerSnapshot, ServiceError> {
         let mut state = self.lock_state()?;
         let now_100ns = self.now_100ns()?;
-        if matches!(state.timer.state(), TimerState::FocusRunning { .. }) {
+        self.normalize_at(&mut state, now_100ns)?;
+        if matches!(
+            state.timer.state(),
+            TimerState::FocusRunning { .. } | TimerState::BreakRunning { .. }
+        ) {
             let next_revision = next_revision(&state)?;
-            state.timer.pause(now_100ns)?;
+            match state.timer.state() {
+                TimerState::FocusRunning { .. } => state.timer.pause(now_100ns)?,
+                TimerState::BreakRunning { .. } => state.timer.pause_break(now_100ns)?,
+                _ => unreachable!(),
+            }
             state.revision = next_revision;
         }
         self.persist_at(&mut state, now_100ns);
@@ -326,12 +360,13 @@ impl<C: Clock> TimerService<C> {
         action: fn(&mut FocusTimer, u64) -> Result<(), TimerError>,
     ) -> Result<TimerSnapshot, ServiceError> {
         let mut state = self.lock_state()?;
+        let now_100ns = self.now_100ns()?;
+        self.normalize_at(&mut state, now_100ns)?;
         validate_revision(&state, expected_revision)?;
         if requires_power && !state.power_available {
             return Err(ServiceError::PowerUnavailable);
         }
         let next_revision = next_revision(&state)?;
-        let now_100ns = self.now_100ns()?;
         action(&mut state.timer, now_100ns)?;
         state.revision = next_revision;
         self.persist_at(&mut state, now_100ns);
@@ -375,6 +410,14 @@ impl<C: Clock> TimerService<C> {
         };
     }
 
+    fn normalize_at(&self, state: &mut ServiceState, now_100ns: u64) -> Result<(), ServiceError> {
+        if state.timer.normalize_break(now_100ns)? {
+            state.revision = next_revision(state)?;
+            self.persist_at(state, now_100ns);
+        }
+        Ok(())
+    }
+
     #[cfg(test)]
     fn revision_for_test(&self) -> u32 {
         self.state.lock().unwrap().revision
@@ -387,6 +430,9 @@ fn snapshot_at(state: &ServiceState, now_100ns: u64) -> Result<TimerSnapshot, Se
         TimerState::FocusRunning { .. } => TimerPhase::FocusRunning,
         TimerState::FocusPaused { .. } => TimerPhase::FocusPaused,
         TimerState::BreakReady { .. } => TimerPhase::BreakReady,
+        TimerState::BreakRunning { .. } => TimerPhase::BreakRunning,
+        TimerState::BreakPaused { .. } => TimerPhase::BreakPaused,
+        TimerState::BreakCompleted { .. } => TimerPhase::BreakCompleted,
     };
     Ok(TimerSnapshot {
         revision: state.revision,
@@ -394,6 +440,7 @@ fn snapshot_at(state: &ServiceState, now_100ns: u64) -> Result<TimerSnapshot, Se
         focus_elapsed_ms: state.timer.effective_at(now_100ns)? / 10_000,
         ratio: state.timer.ratio().value(),
         break_earned_ms: state.timer.earned_break_at(now_100ns)? / 10_000,
+        break_remaining_ms: state.timer.break_remaining_at(now_100ns)? / 10_000,
         history: state.history.clone(),
         persistence_status: state.persistence_status,
     })
@@ -934,5 +981,63 @@ mod tests {
         assert_eq!(recovered.phase, TimerPhase::BreakReady);
         assert_eq!(recovered.ratio, 5);
         assert_eq!(recovered.break_earned_ms, 10 * 60 * 1_000);
+    }
+
+    #[test]
+    fn break_completion_is_normalized_before_snapshot_and_new_focus_is_manual() {
+        let clock = FakeClock::default();
+        let service = TimerService::new(clock.clone());
+        service.start_focus(0).unwrap();
+        clock.set(3 * 60 * 10_000_000);
+        service.finish_focus(1).unwrap();
+        service.start_break(2).unwrap();
+        clock.set(4 * 60 * 10_000_000);
+
+        let completed = service.snapshot().unwrap();
+
+        assert_eq!(completed.phase, TimerPhase::BreakCompleted);
+        assert_eq!(completed.break_remaining_ms, 0);
+        assert_eq!(completed.revision, 4);
+        assert_eq!(
+            service.start_focus(4).unwrap().phase,
+            TimerPhase::FocusRunning
+        );
+    }
+
+    #[test]
+    fn running_break_recovers_as_paused_with_its_remaining_duration() {
+        let directory = TestDirectory::new();
+        let clock = FakeClock::default();
+        let service = TimerService::from_storage(clock.clone(), directory.storage());
+        service.start_focus(0).unwrap();
+        clock.set(30 * 60 * 10_000_000);
+        service.finish_focus(1).unwrap();
+        service.start_break(2).unwrap();
+        clock.set(35 * 60 * 10_000_000);
+        service.checkpoint().unwrap();
+        drop(service);
+
+        let recovered = TimerService::from_storage(clock, directory.storage());
+        let snapshot = recovered.snapshot().unwrap();
+        assert_eq!(snapshot.phase, TimerPhase::BreakPaused);
+        assert_eq!(snapshot.break_remaining_ms, 5 * 60 * 1_000);
+        assert_eq!(snapshot.history.len(), 1);
+    }
+
+    #[test]
+    fn preparing_close_pauses_a_running_break() {
+        let directory = TestDirectory::new();
+        let clock = FakeClock::default();
+        let service = TimerService::from_storage(clock.clone(), directory.storage());
+        service.start_focus(0).unwrap();
+        clock.set(30 * 60 * 10_000_000);
+        service.finish_focus(1).unwrap();
+        service.start_break(2).unwrap();
+        clock.set(35 * 60 * 10_000_000);
+
+        let snapshot = service.prepare_close().unwrap();
+
+        assert_eq!(snapshot.phase, TimerPhase::BreakPaused);
+        assert_eq!(snapshot.break_remaining_ms, 5 * 60 * 1_000);
     }
 }

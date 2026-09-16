@@ -188,10 +188,17 @@ Verificar: `cargo test --manifest-path src-tauri/Cargo.toml commands::tests`; `n
 
 ### T16 — Modelar regressivo e controles do descanso [M]
 Dependências: CP5. Arquivos: `src-tauri/src/timer.rs`, `src-tauri/src/service.rs`, `src-tauri/src/storage.rs`.
-- [ ] Implementar início manual, pausa/retomada, encerrar/pular e término em zero; sobra descartada, histórico mantido e próximo foco manual.
-- [ ] Normalizar conclusão antes de consulta/ação/checkpoint, sem negativos; pausa exclui tempo e preferência não recalcula descanso concedido.
-- [ ] Recuperar breakRunning como breakPaused; breakReady/breakPaused/breakCompleted preservados. Cobrir subsegundos, duração concedida zero por divisão e comandos no limite da conclusão.
+- [x] Implementar início manual, pausa/retomada, encerrar/pular e término em zero; sobra descartada, histórico mantido e próximo foco manual.
+- [x] Normalizar conclusão antes de consulta/ação/checkpoint, sem negativos; pausa exclui tempo e preferência não recalcula descanso concedido.
+- [x] Recuperar breakRunning como breakPaused; breakReady/breakPaused/breakCompleted preservados. Cobrir subsegundos, duração concedida zero por divisão e comandos no limite da conclusão.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml timer::tests`; `cargo test --manifest-path src-tauri/Cargo.toml service::tests`; `cargo test --manifest-path src-tauri/Cargo.toml storage::tests`.
+
+### 16/09/2026 — T16 concluída
+
+- Estados `breakReady`, `breakRunning`, `breakPaused` e `breakCompleted` persistem foco e descanso concedido congelados; o restante é saturado em zero.
+- Serviço normaliza o término antes de snapshots, ações, checkpoints e fechamento. Suspensão e fechamento pausam descanso ativo; retomar permanece manual.
+- Checkpoint grava descanso ativo; na reabertura ele é restaurado pausado com o restante consolidado. Encerrar descarta a sobra e novo foco exige ação manual.
+- `cargo test`: 56 testes Rust passaram; `cargo check`, `npm run build` e 7 testes Vitest passaram. Controles da interface são a T17 seguinte.
 
 ### T17 — Conectar descanso à interface [M]
 Dependências: T16. Arquivos: `src-tauri/src/commands.rs`, `src/flowmodoro.ts`, `src/components/TimerPanel.tsx`, `src/App.tsx`.
