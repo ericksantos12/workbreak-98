@@ -102,11 +102,6 @@ select:focus-visible {
   border: 1px solid #000;
 }
 
-.app-hint {
-  margin: 0;
-  line-height: 1.45;
-}
-
 .status-bar-field:first-child {
   flex: 1;
 }

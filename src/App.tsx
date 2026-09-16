@@ -42,11 +42,6 @@ function App() {
               Não foi possível acessar o cronômetro: {error}
             </p>
           )}
-
-          <p className="app-hint">
-            O tempo é calculado pelo relógio do sistema, mesmo quando esta janela
-            está em segundo plano.
-          </p>
         </div>
 
         <div className="status-bar" aria-live="polite">
