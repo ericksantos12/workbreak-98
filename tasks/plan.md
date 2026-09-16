@@ -16,10 +16,10 @@ Entregar o ciclo foco → descanso automático → novo foco, com proporção di
 - Serviço nativo serializa ações da UI, eventos de energia, checkpoints e fechamento. Escritas ordenadas; callbacks do SO apenas capturam amostra de tempo e encaminham evento, sem I/O demorado.
 - React recebe snapshots autoritativos. Não persiste sessão em localStorage nem mantém um segundo cronômetro de negócio.
 - Estados: idle, focusRunning, focusPaused, breakReady, breakRunning, breakPaused e breakCompleted. Encerrar/pular descanso leva a breakCompleted; foco zero volta a idle.
-- Ações explícitas: iniciar/pausar/retomar/finalizar/resetar foco, mudar proporção, iniciar/pausar/retomar/encerrar descanso. Reset descarta o foco em andamento sem registrar histórico ou descanso. Repetições fora de estado válido não criam transições extras.
+- Ações explícitas: iniciar/pausar/retomar/finalizar/resetar foco, mudar proporção, finalizar foco iniciando descanso, pausar/retomar/finalizar descanso. Reset descarta o ciclo sem histórico ou descanso. Repetições fora de estado válido não criam transições extras.
 - Snapshot contém revisão crescente, estado, proporção preferida, durações calculadas e situação da persistência. Comandos validam a revisão esperada para rejeitar ações obsoletas; avanço temporal de projeção não precisa incrementar a revisão de transição.
 - Uma requisição de atualização visual por vez, aproximadamente a cada 250 ms enquanto visível; respostas obsoletas são ignoradas. Ao voltar à janela, buscar snapshot imediato. Intervalos nunca somam segundos.
-- Conclusão do descanso é normalizada pelo serviço ao consultar/agir/checkpointar, antes de aplicar novos comandos; término lógico é limitado à duração concedida.
+- Conclusão do descanso é normalizada pelo serviço ao consultar/agir/checkpointar, antes de aplicar novos comandos; o próximo foco inicia automaticamente e o saldo pode ficar negativo após excesso de descanso.
 
 ### 2. Separar tempo decorrido de data civil
 
@@ -55,7 +55,7 @@ Entregar o ciclo foco → descanso automático → novo foco, com proporção di
 - Importar 98.css antes dos ajustes locais. Substituir tela e CSS do starter, incluindo estilos globais/dark mode conflitantes.
 - `App` coordena a apresentação; cliente IPC e hook cuidam de snapshots, erros e cleanup compatível com StrictMode.
 - Três timers sempre visíveis para foco, saldo de descanso e descanso decorrido, além das ações e preferência de proporção. HH:MM:SS, foco/ganho truncados em segundos, restante arredondado para cima; precisão de negócio permanece em milissegundos.
-- Mostrar onde a proporção se aplica: foco atual durante foco; próximo foco após finalização. Histórico usa proporção congelada.
+- Mostrar onde a proporção se aplica: foco atual durante foco e próximo ciclo após Reset. O saldo é consumido durante o descanso, preservando o excedente negativo.
 - Labels em português, controles semânticos, estado textual, foco visível, rolagem em 800 × 600. Timer não anuncia cada tick em live region; mensagens de estado/erro podem anunciar mudanças.
 - Comandos pendentes desabilitam ações conflitantes; mostrar indisponibilidade do backend em execução apenas no navegador, sem simular sucesso.
 
@@ -87,7 +87,7 @@ Esses são destinos propostos, não scaffolding para criar em massa. Cada increm
 Prova nativa de relógio/energia + prova de armazenamento
     → domínio do foco → serviço/IPC → foco utilizável em 98.css
     → preferências e recuperação do foco → integração de suspensão/saída/instância única
-    → finalizar foco + histórico persistido + descanso disponível
+    → finalizar foco + descanso automático persistido
     → regressivo + pausa/retomada/encerramento + recuperação do descanso
     → robustez de armazenamento + revisão visual + validação desktop completa
 ```
@@ -100,8 +100,8 @@ As unidades abaixo orientam o PLAN; critérios detalhados, arquivos e comandos p
 | B — Primeiro caminho utilizável | B1: domínio de iniciar/pausar/retomar foco; B2: serviço e contrato IPC com snapshot; B3: painel de foco 98.css ligado ao backend | Usuário inicia/pausa/retoma foco; atualização atrasada mostra tempo correto | CP2 após B1–B3: testes de domínio e foco end-to-end |
 | C — Continuidade do foco | C1: proporção e ganho dinâmicos na UI/domínio; C2: carregar/salvar preferências e checkpoint de foco | Pausa excluída, 3/4/5 corretos e reabertura recupera pausado | CP3 após C1–C2: cálculo e recuperação |
 | D — Ciclo de vida real | D1: integração energia/fechamento com serviço; D2: instância única antes do armazenamento | Minimizar conta, suspender pausa, fechar salva; segunda instância não escreve | CP4 após D1–D2: verificação desktop obrigatória |
-| E — Finalização e histórico | E1: transição atômica para descanso disponível e registro persistido; E2: ação de finalizar, apresentação do descanso disponível e painel de histórico | Finalizar repetidamente não duplica; espera manual não consome descanso | CP5 após E1–E2: jornada foco → histórico/descanso disponível |
-| F — Descanso completo | F1: início manual, regressivo e controles de pausa/retomada/encerramento; F2: recuperação e concorrência do descanso | Zero sem negativos, sobra descartada, retorno pausado e novo foco manual | CP6 após F1–F2: ciclo completo + recuperação em cada estado |
+| E — Finalização e descanso | E1: transição atômica para descanso automático persistido; E2: ação de finalizar e timers lado a lado | Finalizar preserva o saldo; Reset é a única limpeza explícita | CP5 após E1–E2: jornada foco → descanso automático |
+| F — Descanso completo | F1: início automático, regressivo e controles de pausa/retomada/encerramento; F2: recuperação e concorrência do descanso | Excesso gera saldo negativo, sobra preservada e novo foco automático | CP6 após F1–F2: ciclo completo + recuperação em cada estado |
 | G — Falhas e entrega | G1: recuperação explícita de dados inválidos e UI de falhas de escrita/saída; G2: revisão visual/acessibilidade e atualização de README/AGENTS; G3: validação integrada e build desktop | Falhas visíveis, original preservado, documentação atual e todos os critérios da spec cobertos | CP7 após G1–G3: aceite final |
 
 Tratamento mínimo de erros é obrigatório desde A/C; G1 completa a experiência e testes de falha, não adia validação ou proteção dos dados.
@@ -125,7 +125,7 @@ Testes de persistência devem cobrir substituição de arquivo existente, JSON i
 
 Nos checkpoints rodar testes pertinentes aos arquivos alterados; quando houver integração frontend/nativo, verificar ambas as camadas e a jornada daquela etapa. Registrar comandos, resultados e limitações em `tasks/todo.md` durante a execução. Não marcar teste manual como aprovado com base apenas em mocks.
 
-Validação final: foco 10 min + pausa 5 min + foco 20 min = foco efetivo 30 min; troca 3:1 → 5:1 reduz ganho 10 → 6 min; descanso inicia manualmente; histórico persiste sem duplicatas. Automatizar durações longas com relógio controlado. Testar realmente minimização, suspensão, retomada, fechamento, encerramento forçado e segunda instância no Windows. Verificar 800 × 600, teclado e tema; build frontend não substitui bundle nativo.
+Validação final: foco 10 min + pausa 5 min + foco 20 min = foco efetivo 30 min; troca 3:1 → 5:1 reduz ganho 10 → 6 min; finalizar foco inicia descanso automaticamente; finalizar descanso preserva os valores até Reset. Automatizar durações longas com relógio controlado. Testar realmente minimização, suspensão, retomada, fechamento, encerramento forçado e segunda instância no Windows. Verificar 800 × 600, teclado e tema; build frontend não substitui bundle nativo.
 
 ## Riscos e condições de bloqueio
 
@@ -135,7 +135,6 @@ Validação final: foco 10 min + pausa 5 min + foco 20 min = foco efetivo 30 min
 | Callback de energia competindo com UI/checkpoint | Capturar tempo no callback, serialização/prioridade e testes de ordenação; não fazer I/O pesado dentro do callback |
 | Substituição de arquivo no Windows/antivírus/arquivo bloqueado | Spike A2, tratamento de falha e preservação do documento anterior; nada de delete-then-rename |
 | Snapshot antigo ou StrictMode duplicando ações | Revisões, comandos validados, cleanup de polling e serviço como única autoridade |
-| Histórico crescente tornando checkpoint caro | Medir custo com histórico representativo; não limitar/remover sessões sem aprovação. Se necessário, revisar persistência antes de alegar cadência de 1 s |
 | Ambiente sem Rust/MSVC/WebView2 ou acesso ao desktop | Diagnosticar no início da execução; registrar bloqueio. Não afirmar validação nativa só por build web |
 
 ## Fontes técnicas consultadas

@@ -16,7 +16,7 @@ Aplicativo desktop Tauri para Windows para trabalhar por tempo livre e obter des
 - Descanso pertence à sessão atual, sem banco transferido entre sessões.
 - Não há histórico de foco no produto. Persistir apenas preferências e sessão atual localmente.
 - Segundo plano conta normalmente. Fechamento e suspensão do computador não contam; recuperar pausado.
-- Sem versão web de produto, contas, sincronização, edição/exportação do histórico, sons ou notificações no MVP.
+- Sem versão web de produto, contas, sincronização, histórico, sons ou notificações no MVP.
 
 ## Contexto verificado no repositório
 
@@ -33,9 +33,9 @@ Aplicativo desktop Tauri para Windows para trabalhar por tempo livre e obter des
 - Descanso calculado = foco efetivo / divisor selecionado. Exemplo: 60 min geram 20, 15 ou 12 min nas proporções 3:1, 4:1 ou 5:1.
 - Não usar número de ticks como fonte de tempo. Intervals servem apenas para atualização visual/checkpoints.
 - Atrasos de renderização e throttling da WebView não podem ser interpretados como suspensão ou pausa.
-- Ao iniciar descanso, descontar apenas tempo ativo de descanso; nunca exibir valor negativo.
+- Ao iniciar descanso, descontar apenas tempo ativo de descanso; se o descanso exceder o saldo, exibir o saldo negativo para compensação futura.
 - Manter precisão em milissegundos, arredondar o descanso calculado uma única vez para baixo em milissegundos; exibir foco/ganho em segundos completos e restante com arredondamento para cima. Usar HH:MM:SS sem reiniciar após 24 horas.
-- Alteração de proporção após finalizar foco vale apenas para o próximo foco; histórico e descanso já concedido permanecem imutáveis.
+- Alteração de proporção após finalizar foco vale apenas para o próximo foco; o descanso já concedido permanece imutável.
 - Risco: relógio civil pode mudar por ajuste manual/NTP. Timestamps persistidos e medição de duração precisam de política explícita; não basta usar Date.now() indiscriminadamente.
 
 ## Fluxo aprovado
@@ -46,22 +46,22 @@ Aplicativo desktop Tauri para Windows para trabalhar por tempo livre e obter des
 4. Finalizar foco inicia imediatamente o descanso proporcional.
 5. Descanso ativo: o saldo conquistado é consumido regressivamente enquanto o tempo descansado cresce.
 6. Recuperação de descanso interrompido: descanso pausado com ação de retomar.
-7. Descanso concluído: novo foco depende de ação manual, sem ciclo automático.
+7. Descanso concluído: o próximo foco inicia automaticamente, preservando os valores exibidos.
 
-Permitir pausar/retomar e encerrar/pular descanso, descartando a sobra, sem apagar o histórico de foco.
+Permitir pausar/retomar e finalizar descanso, preservando os valores exibidos até um Reset explícito.
 Foco com duração efetiva zero não gera registro nem descanso; retorna ao estado inicial.
-Comandos repetidos não podem duplicar sessões no histórico ou iniciar timers concorrentes.
+Comandos repetidos não podem criar transições extras ou iniciar timers concorrentes.
 
 ## Recuperação e persistência
 
-- Uma única autoridade de estado deve coordenar timer, transições, histórico e gravações; evitar timers independentes em React e Rust.
+- Uma única autoridade de estado deve coordenar timers, transições e gravações; evitar timers independentes em React e Rust.
 - Arquitetura aprovada no PLAN: autoridade no processo Rust, com React como interface. A integração nativa Windows será validada no primeiro checkpoint.
 - Persistir em armazenamento local do aplicativo, com versão de formato, validação e gravação atômica. O PLAN aprovado define JSON local acessado por Rust.
 - Salvar cada transição e mudança de preferência; checkpoint periódico de 1 segundo enquanto há timer ativo.
 - Fechamento normal: consolidar segmento ativo, salvar estado pausado e só então encerrar; não transformar minimizar/perder foco da janela em pausa.
 - Suspensão: observar eventos nativos e excluir o intervalo suspenso. Ao retornar, aguardar retomada manual. A viabilidade/API deve ser comprovada na plataforma-alvo antes da implementação do timer completo.
 - Encerramento inesperado: restaurar pausado até o último checkpoint válido, sem cobrar o intervalo até reabrir. Pode haver perda do trecho ainda não salvo; periodicidade de 1 segundo é objetivo, não garantia rígida em falha de disco/processo/SO.
-- Histórico e estado da sessão precisam ser persistidos de forma consistente para impedir duplicação após reabertura.
+- O estado da sessão precisa ser persistido de forma consistente após reabertura.
 - Erro de gravação: manter estado em memória e mostrar aviso de que a recuperação não está garantida; não alegar sucesso de salvamento.
 - Dados inválidos: não sobrescrever silenciosamente o conteúdo original; informar falha e oferecer recuperação/reinicialização explícita.
 - Instância única por `tauri-plugin-single-instance`, aprovada no PLAN, impede escritores concorrentes de processos distintos.
@@ -69,7 +69,7 @@ Comandos repetidos não podem duplicar sessões no histórico ou iniciar timers 
 ## Interface e critérios visuais
 
 - Usar componentes/classes reais de 98.css, com ajustes locais apenas onde necessário.
-- Janela retro, controles nativos semânticos, seletor de proporção, timer principal, descanso conquistado e histórico do mais recente para o mais antigo.
+- Janela retro, controles nativos semânticos, seletor de proporção, timer de foco, saldo de descanso e descanso decorrido.
 - Controles identificados em português, foco de teclado visível e estados ativo/pausado/aguardando descanso claros sem depender somente de cor.
 - Validar na janela inicial existente de 800 × 600; conteúdo acessível por rolagem se necessário, sem sobreposição de controles.
 - Sem controles decorativos de janela que aparentem ter funções não implementadas.
@@ -107,13 +107,13 @@ TypeScript tem strict e checagem de variáveis/parâmetros não usados. Não exi
 - 60 min de foco geram exatamente 20/15/12 min de descanso para 3/4/5.
 - 10 min ativos + 5 min pausados + 20 min ativos resultam em 30 min de foco e 10 min de descanso em 3:1.
 - Mudar de 3:1 para 5:1 após 30 min efetivos altera o ganho de 10 para 6 min, inclusive se pausado.
-- Finalizar registra uma única sessão, congela sua proporção e não inicia regressivo; esperar antes de iniciar descanso não consome tempo.
+- Finalizar registra uma única sessão, congela sua proporção e inicia o descanso regressivo; esperar antes de iniciar descanso não consome tempo.
 - Sem renderizar por 5 min em segundo plano, atualizar a interface revela duração correta, sem depender de 300 ticks.
 - Fechar normalmente/reabrir e suspender/retomar preservam tempo já trabalhado e excluem tempo de ausência; retomada é manual.
 - Forçar encerramento recupera o último checkpoint válido pausado; tolerância conforme política aprovada.
-- Descanso conclui em zero e não inicia foco automaticamente.
-- Preferência, histórico e estado sobrevivem a reinício; testar estados de foco ativo/pausado, descanso disponível/ativo/pausado e conclusão.
-- Testar gravação indisponível, conteúdo inválido e transições repetidas; não duplicar histórico.
+- Finalizar ou esgotar o descanso inicia automaticamente o próximo foco, sem zerar foco, saldo ou descanso decorrido.
+- Preferência e estado sobrevivem a reinício; testar estados de foco ativo/pausado, descanso ativo/pausado e conclusão.
+- Testar gravação indisponível, conteúdo inválido e transições repetidas.
 - Testes manuais desktop obrigatórios para suspensão real, minimização, fechamento e persistência. Mocks de relógio não comprovam eventos do SO.
 - Verificar integração visual de 98.css, navegação por teclado e janela 800 × 600 no Tauri.
 - Limites de arredondamento, ajustes de relógio e múltiplas instâncias precisam de casos derivados das políticas aprovadas.

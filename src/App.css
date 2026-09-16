@@ -132,10 +132,6 @@ select:focus-visible {
     flex-direction: column;
   }
 
-  .timer-dashboard {
-    grid-template-columns: 1fr;
-  }
-
   .timer-actions button {
     width: 100%;
   }

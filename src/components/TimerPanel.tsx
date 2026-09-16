@@ -4,6 +4,7 @@ import type {
   TimerSnapshot,
 } from "../flowmodoro";
 import { formatElapsedTime, formatRemainingTime } from "../formatTime";
+import { useState } from "react";
 
 interface TimerPanelProps {
   snapshot: TimerSnapshot | null;
@@ -20,11 +21,12 @@ function TimerPanel({
   onAction,
   onRatioChange,
 }: TimerPanelProps) {
+  const [resetPending, setResetPending] = useState(false);
   const disabled = isLoading || isActionPending || !snapshot;
-  const breakElapsedMs = Math.max(
-    0,
-    (snapshot?.breakEarnedMs ?? 0) - (snapshot?.breakRemainingMs ?? 0),
-  );
+  const isBreakPhase = snapshot?.phase.startsWith("break") ?? false;
+  const breakBalanceMs = isBreakPhase
+    ? (snapshot?.breakRemainingMs ?? 0)
+    : (snapshot?.breakEarnedMs ?? 0);
 
   return (
     <section className="timer-panel" aria-labelledby="focus-title">
@@ -36,15 +38,15 @@ function TimerPanel({
           </p>
         </fieldset>
         <fieldset className="break-balance">
-          <legend>Saldo de descanso</legend>
+          <legend>Descanso conquistado</legend>
           <p className="timer-readout" aria-label="Saldo de descanso restante">
-            {formatRemainingTime(snapshot?.breakRemainingMs ?? 0)}
+            {formatRemainingTime(breakBalanceMs)}
           </p>
         </fieldset>
         <fieldset>
           <legend>Descanso decorrido</legend>
           <p className="timer-readout" aria-label="Tempo de descanso decorrido">
-            {formatElapsedTime(breakElapsedMs)}
+            {formatElapsedTime(snapshot?.breakElapsedMs ?? 0)}
           </p>
         </fieldset>
       </div>
@@ -98,13 +100,6 @@ function TimerPanel({
             >
               Finalizar foco
             </button>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onAction("resetFocus")}
-            >
-              Reset
-            </button>
           </>
         )}
         {snapshot?.phase === "focusPaused" && (
@@ -124,43 +119,30 @@ function TimerPanel({
             >
               Finalizar foco
             </button>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onAction("resetFocus")}
-            >
-              Reset
-            </button>
           </>
         )}
-        {snapshot?.phase === "breakRunning" && (
+        {(snapshot?.phase === "breakRunning" ||
+          snapshot?.phase === "breakPaused") && (
           <>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onAction("pauseBreak")}
-            >
-              Pausar descanso
-            </button>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onAction("endBreak")}
-            >
-              Finalizar descanso
-            </button>
-          </>
-        )}
-        {snapshot?.phase === "breakPaused" && (
-          <>
-            <button
-              className="default"
-              type="button"
-              disabled={disabled}
-              onClick={() => onAction("resumeBreak")}
-            >
-              Retomar descanso
-            </button>
+            {snapshot.phase === "breakRunning" && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onAction("pauseBreak")}
+              >
+                Pausar descanso
+              </button>
+            )}
+            {snapshot.phase === "breakPaused" && (
+              <button
+                className="default"
+                type="button"
+                disabled={disabled}
+                onClick={() => onAction("resumeBreak")}
+              >
+                Retomar descanso
+              </button>
+            )}
             <button
               type="button"
               disabled={disabled}
@@ -171,13 +153,31 @@ function TimerPanel({
           </>
         )}
         {snapshot?.phase === "breakCompleted" && (
+          <>
+            <button
+              className="default"
+              type="button"
+              disabled={disabled}
+              onClick={() => onAction("startFocus")}
+            >
+              Iniciar novo foco
+            </button>
+          </>
+        )}
+        {snapshot?.phase !== "idle" && (
           <button
-            className="default"
             type="button"
             disabled={disabled}
-            onClick={() => onAction("startFocus")}
+            onClick={() => {
+              if (resetPending) {
+                setResetPending(false);
+                onAction("resetFocus");
+              } else {
+                setResetPending(true);
+              }
+            }}
           >
-            Iniciar novo foco
+            {resetPending ? "Confirmar Reset?" : "Reset"}
           </button>
         )}
       </div>

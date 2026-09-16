@@ -154,7 +154,7 @@ Verificar: `cargo check --manifest-path src-tauri/Cargo.toml`; `npm run tauri de
 - [ ] Minimizar conta; suspender pausa; retorno exige retomada manual; fechar salva; segunda instância não escreve.
 - [ ] Falha de salvamento no fechamento tem decisão explícita; testes nativos pertinentes passam e evidência desktop aprovada pelo usuário.
 
-## E — Finalização e histórico (E1/E2 do plano)
+## E — Finalização e descanso (E1/E2 do plano)
 
 ### Alteração aprovada em 16/09/2026
 
@@ -164,58 +164,58 @@ Verificar: `cargo check --manifest-path src-tauri/Cargo.toml`; `npm run tauri de
 ### 16/09/2026 — fluxo visual revisado
 
 - Histórico removido do estado, IPC, persistência e interface. Campos de histórico de documentos antigos são ignorados e não voltam a ser gravados.
-- Ao finalizar foco, o descanso proporcional começa imediatamente. O saldo central diminui enquanto o timer de descanso à direita cresce.
-- Foco, saldo e descanso decorrido permanecem lado a lado em desktop; em telas estreitas passam a uma coluna para preservar legibilidade.
+- Durante o foco, o saldo central mostra o descanso conquistado e o timer à direita permanece zerado. Ao finalizar foco, o saldo central diminui enquanto o timer de descanso à direita cresce.
+- Foco, saldo e descanso decorrido permanecem lado a lado também em telas estreitas; ações e metadados podem empilhar para preservar legibilidade.
 - `cargo test`: 57 testes Rust passaram; `cargo check`, `npm run build` e 7 testes Vitest passaram.
 
-### T14 — Finalizar foco com histórico transacional [M]
+### T14 — Finalizar foco e iniciar descanso [M]
 Dependências: CP4. Arquivos: `src-tauri/src/timer.rs`, `src-tauri/src/storage.rs`, `src-tauri/src/service.rs`.
-- [x] Finalizar foco ativo/pausado cria registro com identificador, data/hora civil, foco efetivo, proporção final e descanso calculado; sessão vira breakReady no mesmo documento.
+- [x] Finalizar foco ativo/pausado inicia o descanso proporcional no mesmo documento; não há registro de histórico.
 - [x] Reset em foco ativo/pausado descarta a sessão sem criar histórico ou descanso, restaura o timer a zero e persiste a transição; comandos repetidos não criam efeitos extras.
-- [x] Foco zero volta a idle sem registro; comandos repetidos não duplicam histórico; IDs não dependem só de data civil e são validados na leitura.
-- [x] Descanso disponível não diminui com espera; preferência posterior afeta apenas próximo foco. Restauro de breakReady preserva histórico/descanso congelados.
+- [x] Foco zero volta a idle; comandos repetidos não criam transições extras.
+- [x] O saldo de descanso fica congelado até o início automático do descanso e a preferência posterior não altera o saldo concedido.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml timer::tests`; `cargo test --manifest-path src-tauri/Cargo.toml storage::tests`; `cargo test --manifest-path src-tauri/Cargo.toml service::tests`.
 
-### T15 — Exibir finalização e histórico na interface [M]
-Dependências: T14. Arquivos: `src-tauri/src/commands.rs`, `src/flowmodoro.ts`, `src/components/TimerPanel.tsx`, `src/components/HistoryPanel.tsx`, `src/App.tsx`.
-- [x] Finalizar disponível em foco ativo/pausado e protegido contra cliques repetidos; mostrar descanso disponível sem regressivo automático.
-- [x] Reset disponível em foco ativo/pausado, pede confirmação e informa que não será salvo no histórico.
-- [x] Histórico mais recente primeiro, com campos aprovados e estado vazio; datas em português, durações pelo formatador existente.
-- [x] UI indica quando proporção vale para próximo foco; alterações não mudam registros antigos nem descanso concedido.
-Verificar: `cargo test --manifest-path src-tauri/Cargo.toml commands::tests`; `npm run build`; `npm run tauri dev` e finalizar/reabrir/trocar proporção em breakReady. Início do descanso será habilitado em T17, sem botão que simule funcionalidade nesta etapa.
+### T15 — Exibir timers de foco e descanso [M]
+Dependências: T14. Arquivos: `src-tauri/src/commands.rs`, `src/flowmodoro.ts`, `src/components/TimerPanel.tsx`, `src/App.tsx`.
+- [x] Finalizar disponível em foco ativo/pausado e inicia automaticamente o descanso; o botão passa a `Finalizar descanso`.
+- [x] Reset disponível durante o ciclo; o primeiro clique muda o próprio botão para `Confirmar Reset?` e o segundo confirma.
+- [x] Foco, descanso conquistado e descanso decorrido permanecem sempre visíveis e lado a lado no desktop.
+- [x] O saldo central diminui durante o descanso e o timer à direita cresce apenas durante o descanso.
+Verificar: `cargo test --manifest-path src-tauri/Cargo.toml commands::tests`; `npm run build`; `npm run tauri dev` e finalizar/encerrar/resetar o ciclo.
 
 ### 16/09/2026 — T14 e T15 concluídas
 
-- Finalizar cria registro imutável (ID sequencial, data/hora civil Unix, foco efetivo, proporção e descanso) e troca para `breakReady` no mesmo documento JSON.
-- Reset foi adicionado por solicitação do usuário: fica disponível em foco ativo/pausado, pede confirmação na UI, persiste `idle` e não cria histórico nem descanso.
-- `breakReady` congela foco/descanso; trocar a proporção depois disso prepara apenas o próximo foco e não altera o registro nem o descanso concedido.
-- Documentos com IDs inválidos ou duplicados são bloqueados sem sobrescrita. Documentos anteriores sem histórico são lidos com lista vazia e próximo ID 1.
+- Finalizar inicia automaticamente `breakRunning` no mesmo documento JSON, sem criar histórico.
+- Reset foi adicionado por solicitação do usuário: fica disponível durante o ciclo, usa confirmação no próprio botão, persiste `idle` e não cria histórico nem descanso.
+- O saldo concedido permanece congelado; trocar a proporção depois de finalizar não altera o descanso atual.
+- Campos de histórico de documentos antigos são ignorados e não voltam a ser gravados.
 - `cargo test`: 51 testes Rust passaram; `cargo check`, `npm run build` e 7 testes Vitest passaram. A inspeção visual no Tauri de finalizar/reset/histórico ainda será incluída na validação desktop do CP5.
 
 ### CP5 — Finalização persistida (T14–T15)
-- [ ] Caminho foco → histórico/descanso disponível funciona e sobrevive a reabertura sem duplicatas.
-- [ ] Casos foco zero, finalizar pausado e proporção congelada comprovados; aprovação humana registrada.
+- [ ] Caminho foco → descanso automático funciona e sobrevive a reabertura sem histórico.
+- [ ] Casos foco zero, finalizar pausado e saldo congelado comprovados; aprovação humana registrada.
 
 ## F — Descanso completo (F1/F2 do plano)
 
 ### T16 — Modelar regressivo e controles do descanso [M]
 Dependências: CP5. Arquivos: `src-tauri/src/timer.rs`, `src-tauri/src/service.rs`, `src-tauri/src/storage.rs`.
-- [x] Implementar início manual, pausa/retomada, encerrar/pular e término em zero; sobra descartada, histórico mantido e próximo foco manual.
-- [x] Normalizar conclusão antes de consulta/ação/checkpoint, sem negativos; pausa exclui tempo e preferência não recalcula descanso concedido.
+- [x] Implementar início automático, pausa/retomada, encerrar/pular e término em zero; sobra preservada ao finalizar antecipadamente e próximo foco automático.
+- [x] Normalizar conclusão antes de consulta/ação/checkpoint, preservando saldo negativo; pausa exclui tempo e preferência não recalcula descanso concedido.
 - [x] Recuperar breakRunning como breakPaused; breakReady/breakPaused/breakCompleted preservados. Cobrir subsegundos, duração concedida zero por divisão e comandos no limite da conclusão.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml timer::tests`; `cargo test --manifest-path src-tauri/Cargo.toml service::tests`; `cargo test --manifest-path src-tauri/Cargo.toml storage::tests`.
 
 ### 16/09/2026 — T16 concluída
 
-- Estados `breakReady`, `breakRunning`, `breakPaused` e `breakCompleted` persistem foco e descanso concedido congelados; o restante é saturado em zero.
-- Serviço normaliza o término antes de snapshots, ações, checkpoints e fechamento. Suspensão e fechamento pausam descanso ativo; retomar permanece manual.
-- Checkpoint grava descanso ativo; na reabertura ele é restaurado pausado com o restante consolidado. Encerrar descarta a sobra e novo foco exige ação manual.
+- Estados `breakReady`, `breakRunning`, `breakPaused` e `breakCompleted` persistem foco, saldo e descanso decorrido; o saldo pode ser negativo.
+- Serviço normaliza o término antes de snapshots, ações, checkpoints e fechamento, iniciando o próximo foco automaticamente. Suspensão e fechamento pausam descanso ativo; retomar permanece manual.
+- Checkpoint grava descanso ativo; na reabertura ele é restaurado pausado com o restante consolidado. Encerrar preserva a sobra/deficit e inicia o próximo foco.
 - `cargo test`: 56 testes Rust passaram; `cargo check`, `npm run build` e 7 testes Vitest passaram. Controles da interface são a T17 seguinte.
 
 ### T17 — Conectar descanso à interface [M]
 Dependências: T16. Arquivos: `src-tauri/src/commands.rs`, `src/flowmodoro.ts`, `src/components/TimerPanel.tsx`, `src/App.tsx`.
 - [x] Iniciar descanso aparece em breakReady; controles de pausa/retomada/encerramento correspondem ao estado e exibem restante arredondado para cima.
-- [x] Conclusão/encerramento oferece iniciar novo foco manualmente; não transfere saldo nem altera histórico.
+- [x] Conclusão/encerramento mantém os valores exibidos e inicia novo foco automaticamente; não transfere saldo entre sessões.
 - [x] Pausa por suspensão/recuperação aparece claramente; não anunciar cada tick por leitor de tela nem simular conclusão no React.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml commands::tests`; `npm run build`; ciclo curto completo, pular, pausar/retomar e novo foco em `npm run tauri dev`.
 
@@ -223,18 +223,18 @@ Verificar: `cargo test --manifest-path src-tauri/Cargo.toml commands::tests`; `n
 
 - O contrato IPC expõe início, pausa, retomada e encerramento do descanso com revisão esperada.
 - A interface mostra o restante em `HH:MM:SS` arredondado para cima e apresenta apenas os controles válidos para cada estado.
-- Encerrar ou concluir descanso oferece iniciar um novo foco manualmente; o React apenas consulta snapshots, sem concluir tempo localmente.
-- `cargo test`: 57 testes Rust passaram; `cargo check`, `npm run build` e 7 testes Vitest passaram. O ciclo visual curto no Tauri fica pendente para a validação desktop de CP6.
+- Encerrar ou concluir descanso inicia um novo foco automaticamente; o React apenas consulta snapshots, sem concluir tempo localmente.
+- `cargo test`: 59 testes Rust passaram; `cargo check`, `npm run build` e 7 testes Vitest passaram. O ciclo visual curto no Tauri fica pendente para a validação desktop de CP6.
 
 ### T18 — Provar recuperação e concorrência do ciclo completo [M]
 Dependências: T17. Arquivos: `src-tauri/src/service.rs`, `src-tauri/src/storage.rs`, `src/flowmodoro.test.ts`.
-- [ ] Testes cobrem todos os estados persistidos, crash e disputa finalização/checkpoint/fechamento/energia sem histórico duplicado ou snapshot antigo.
+- [ ] Testes cobrem todos os estados persistidos, crash e disputa finalização/checkpoint/fechamento/energia sem reset indevido ou snapshot antigo.
 - [ ] Testar ajuste do relógio civil, respostas tardias na conclusão e ações com revisão anterior; durações e UI não regridem.
 - [ ] Verificar descanso em suspensão/retomada real, encerramento forçado e fechamento normal, além de minimização por pelo menos cinco minutos em foco; registrar cenários observados.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml`; `npx vitest run src/flowmodoro.test.ts`; `npm run tauri dev` com dados de teste. Corrigir somente problemas dentro deste escopo; outros geram follow-up antes de fechar checkpoint.
 
 ### CP6 — Ciclo completo e recuperação (T16–T18)
-- [ ] Foco → descanso manual → conclusão/encerramento → novo foco funciona; restauro de todos os estados comprovado.
+- [ ] Foco → descanso automático → conclusão/encerramento → novo foco funciona; restauro de todos os estados comprovado.
 - [ ] Testes automatizados e evidência real de energia/fechamento no descanso revisados e aprovados pelo usuário.
 
 ## G — Falhas e entrega (G1/G2/G3 do plano)
@@ -393,3 +393,11 @@ Verificar: `npx vitest run`; `cargo test --manifest-path src-tauri/Cargo.toml`; 
 - Falha ao registrar notificações mantém o app aberto, mas iniciar/retomar retorna erro explícito. Erro do relógio no callback desabilita novas retomadas.
 - Após `cargo fmt`, `cargo test --manifest-path src-tauri/Cargo.toml`: 36 testes passaram; `cargo check` passou. `npm run app -- --no-watch` compilou e iniciou sem erro de registro.
 - A validação com suspensão física continua pendente conforme exceção aprovada no CP1; não foi simulada como evidência real.
+
+### 16/09/2026 — ajuste do ciclo automático e saldo assinado
+
+- Finalizar foco inicia o descanso; finalizar ou esgotar o descanso inicia o próximo foco automaticamente, preservando foco, saldo e descanso decorrido.
+- O saldo usa representação assinada: descanso excedente permanece negativo e é carregado para o próximo foco. O Reset continua sendo a única operação que zera o ciclo.
+- Os três timers permanecem em três colunas também em telas estreitas; ações e metadados podem empilhar. O botão de Reset mantém confirmação textual em dois cliques.
+- `cargo fmt`, `cargo test --manifest-path src-tauri/Cargo.toml` (59 testes), `cargo check --manifest-path src-tauri/Cargo.toml`, `npm run build`, `npx vitest run` (7 testes) e `git diff --check` passaram.
+- Validação manual no Tauri de ciclo completo, suspensão real, fechamento/reabertura, minimização e instância única continua pendente para CP4/CP5/CP6.

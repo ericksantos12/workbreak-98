@@ -262,7 +262,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(running.phase, TimerPhase::BreakCompleted);
+        assert_eq!(running.phase, TimerPhase::FocusRunning);
     }
 
     #[test]

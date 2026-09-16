@@ -20,6 +20,7 @@ export interface TimerSnapshot {
   ratio: FocusRatio;
   breakEarnedMs: number;
   breakRemainingMs: number;
+  breakElapsedMs: number;
   persistenceStatus: PersistenceStatus;
 }
 

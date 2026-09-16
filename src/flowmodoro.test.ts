@@ -15,6 +15,7 @@ function snapshot(revision: number, focusElapsedMs = 0): TimerSnapshot {
     ratio: 3,
     breakEarnedMs: Math.floor(focusElapsedMs / 3),
     breakRemainingMs: 0,
+    breakElapsedMs: 0,
     persistenceStatus: "available",
   };
 }
@@ -133,6 +134,7 @@ describe("timer controller", () => {
       ratio: 3,
       breakEarnedMs: 3,
       breakRemainingMs: 0,
+      breakElapsedMs: 0,
       persistenceStatus: "available",
     });
     await actionPromise;

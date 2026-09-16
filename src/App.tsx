@@ -41,14 +41,6 @@ function App() {
       | "resumeBreak"
       | "endBreak",
   ) {
-    if (
-      action === "resetFocus" &&
-      !window.confirm(
-        "Resetar o foco atual? Ele será descartado e não aparecerá no histórico.",
-      )
-    ) {
-      return;
-    }
     void act(action).catch(() => {
       // The controller exposes command failures in its state.
     });
