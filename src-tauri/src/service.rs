@@ -164,6 +164,19 @@ impl<C: Clock> TimerService<C> {
         snapshot_at(&state, now_100ns)
     }
 
+    pub fn checkpoint(&self) -> Result<(), ServiceError> {
+        let mut state = self.lock_state()?;
+        if state.persistence_status == PersistenceStatus::Blocked
+            || !matches!(state.timer.state(), TimerState::FocusRunning { .. })
+        {
+            return Ok(());
+        }
+
+        let now_100ns = self.now_100ns()?;
+        self.persist_at(&mut state, now_100ns);
+        Ok(())
+    }
+
     fn transition(
         &self,
         expected_revision: u32,
@@ -268,8 +281,9 @@ mod tests {
         path::PathBuf,
         sync::{
             atomic::{AtomicBool, AtomicU64, Ordering},
-            Arc,
+            Arc, Barrier,
         },
+        thread,
     };
 
     use crate::{clock::Clock, storage::JsonStorage, timer::FocusRatio};
@@ -430,5 +444,80 @@ mod tests {
 
         assert_eq!(snapshot.phase, TimerPhase::FocusRunning);
         assert_eq!(snapshot.persistence_status, PersistenceStatus::Unavailable);
+    }
+
+    #[test]
+    fn checkpoint_persists_running_elapsed_without_incrementing_revision() {
+        let directory = TestDirectory::new();
+        let clock = FakeClock::default();
+        let service = TimerService::from_storage(clock.clone(), directory.storage());
+        service.start_focus(0).unwrap();
+        clock.set(7 * 60 * 10_000_000);
+
+        service.checkpoint().unwrap();
+        assert_eq!(service.snapshot().unwrap().revision, 1);
+        drop(service);
+
+        let recovered = TimerService::from_storage(clock, directory.storage());
+        let snapshot = recovered.snapshot().unwrap();
+        assert_eq!(snapshot.phase, TimerPhase::FocusPaused);
+        assert_eq!(snapshot.focus_elapsed_ms, 7 * 60 * 1_000);
+        assert_eq!(snapshot.revision, 1);
+    }
+
+    #[test]
+    fn checkpoint_cannot_overwrite_a_concurrent_pause() {
+        let directory = TestDirectory::new();
+        let clock = FakeClock::default();
+        let service = Arc::new(TimerService::from_storage(
+            clock.clone(),
+            directory.storage(),
+        ));
+        service.start_focus(0).unwrap();
+        clock.set(5 * 60 * 10_000_000);
+        let barrier = Arc::new(Barrier::new(3));
+
+        let checkpoint_service = Arc::clone(&service);
+        let checkpoint_barrier = Arc::clone(&barrier);
+        let checkpoint = thread::spawn(move || {
+            checkpoint_barrier.wait();
+            checkpoint_service.checkpoint().unwrap();
+        });
+        let pause_service = Arc::clone(&service);
+        let pause_barrier = Arc::clone(&barrier);
+        let pause = thread::spawn(move || {
+            pause_barrier.wait();
+            pause_service.pause_focus(1).unwrap();
+        });
+        barrier.wait();
+        checkpoint.join().unwrap();
+        pause.join().unwrap();
+        drop(service);
+
+        let recovered = TimerService::from_storage(clock, directory.storage());
+        let snapshot = recovered.snapshot().unwrap();
+        assert_eq!(snapshot.phase, TimerPhase::FocusPaused);
+        assert_eq!(snapshot.revision, 2);
+        assert_eq!(snapshot.focus_elapsed_ms, 5 * 60 * 1_000);
+    }
+
+    #[test]
+    fn later_checkpoint_retries_an_unavailable_write() {
+        let directory = TestDirectory::new();
+        let state_path = directory.0.join("state.json");
+        fs::create_dir(&state_path).unwrap();
+        let service = TimerService::from_storage(FakeClock::default(), directory.storage());
+        assert_eq!(
+            service.start_focus(0).unwrap().persistence_status,
+            PersistenceStatus::Unavailable
+        );
+        fs::remove_dir(state_path).unwrap();
+
+        service.checkpoint().unwrap();
+
+        assert_eq!(
+            service.snapshot().unwrap().persistence_status,
+            PersistenceStatus::Available
+        );
     }
 }

@@ -105,9 +105,9 @@ Verificar: `cargo test --manifest-path src-tauri/Cargo.toml storage::tests`; `ca
 
 ### T10 — Checkpoints ordenados e recuperação após crash [M]
 Dependências: T09. Arquivos: `src-tauri/src/service.rs`, `src-tauri/src/storage.rs`, `src-tauri/src/lib.rs`, `src/App.tsx`.
-- [ ] Scheduler nativo salva aproximadamente a cada segundo apenas quando ativo; um escritor impede snapshot antigo de sobrescrever transição nova.
-- [ ] Testes controlados demonstram corrida checkpoint/pausa/proporção e crash após último salvamento; restauro não adiciona tempo ausente nem soma ticks.
-- [ ] UI mostra status de salvamento indisponível desde esta etapa; dados inválidos ficam preservados, e encerramento forçado recupera último documento válido em teste desktop isolado.
+- [x] Scheduler nativo salva aproximadamente a cada segundo apenas quando ativo; um escritor impede snapshot antigo de sobrescrever transição nova.
+- [x] Testes controlados demonstram corrida checkpoint/pausa/proporção e crash após último salvamento; restauro não adiciona tempo ausente nem soma ticks.
+- [x] UI mostra status de salvamento indisponível desde esta etapa; dados inválidos ficam preservados, e encerramento forçado recupera último documento válido em teste desktop isolado.
 Verificar: `cargo test --manifest-path src-tauri/Cargo.toml service::tests`; `cargo test --manifest-path src-tauri/Cargo.toml storage::tests`; `npm run build`; testar encerramento forçado/reabertura com `npm run tauri dev` e dados de teste.
 
 ### CP3 — Recuperação do foco (T09–T10)
@@ -319,3 +319,11 @@ Verificar: `npx vitest run`; `cargo test --manifest-path src-tauri/Cargo.toml`; 
 - `app_local_data_dir()/state.json` é carregado no setup Tauri. Sessão ativa volta pausada; documento inválido permanece intacto e impede gravações automáticas.
 - Falha de I/O mantém ações em memória e retorna `persistenceStatus=unavailable`; estado inválido retorna `blocked`.
 - Após `cargo fmt`, `cargo test --manifest-path src-tauri/Cargo.toml`: 30 testes passaram. `cargo check`, `npx vitest run` (7 testes) e `npm run build`: passaram.
+
+### 16/09/2026 — T10 concluída
+
+- Testes RED definiram checkpoint sem revisão nova, corrida checkpoint/pausa e recuperação de falha de escrita.
+- Worker nativo consolida foco ativo a cada segundo. Checkpoint, ações e gravações usam o mesmo mutex; uma pausa sempre prevalece sobre checkpoint concorrente.
+- Checkpoint não roda para sessão pausada/idle nem para documento bloqueado; estado `unavailable` tenta salvar novamente no próximo ciclo ativo.
+- Snapshot IPC agora inclui `persistenceStatus`; a UI avisa quando recuperação não está garantida ou quando dados inválidos impedem sobrescrita. Recuperação foi verificada em testes nativos com diretório isolado; encerramento forçado da janela real permanece para a validação desktop final.
+- Após `cargo fmt`, `cargo test --manifest-path src-tauri/Cargo.toml`: 33 testes passaram. `cargo check`, `npx vitest run` (7 testes) e `npm run build`: passaram.

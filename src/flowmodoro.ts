@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type TimerPhase = "idle" | "focusRunning" | "focusPaused";
 export type FocusRatio = 3 | 4 | 5;
+export type PersistenceStatus = "available" | "unavailable" | "blocked";
 
 export interface TimerSnapshot {
   revision: number;
@@ -9,6 +10,7 @@ export interface TimerSnapshot {
   focusElapsedMs: number;
   ratio: FocusRatio;
   breakEarnedMs: number;
+  persistenceStatus: PersistenceStatus;
 }
 
 export type TimerAction =

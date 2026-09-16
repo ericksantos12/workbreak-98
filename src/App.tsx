@@ -55,6 +55,18 @@ function App() {
               Não foi possível acessar o cronômetro: {error}
             </p>
           )}
+          {snapshot?.persistenceStatus === "unavailable" && (
+            <p className="error-message" role="alert">
+              Não foi possível salvar a sessão. O cronômetro continua funcionando,
+              mas a recuperação não está garantida.
+            </p>
+          )}
+          {snapshot?.persistenceStatus === "blocked" && (
+            <p className="error-message" role="alert">
+              Os dados locais são inválidos ou incompatíveis. O arquivo original
+              não será sobrescrito.
+            </p>
+          )}
         </div>
 
         <div className="status-bar" aria-live="polite">

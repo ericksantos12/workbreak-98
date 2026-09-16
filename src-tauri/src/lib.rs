@@ -5,6 +5,8 @@ pub mod service;
 pub mod storage;
 pub mod timer;
 
+use std::{thread, time::Duration};
+
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -17,6 +19,7 @@ pub fn run() {
                 clock::SystemClock,
                 storage::JsonStorage::new(state_path),
             ));
+            spawn_checkpoint_worker(app.handle().clone())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -25,4 +28,14 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn spawn_checkpoint_worker(app: tauri::AppHandle) -> std::io::Result<()> {
+    thread::Builder::new()
+        .name("timer-checkpoint".into())
+        .spawn(move || loop {
+            thread::sleep(Duration::from_secs(1));
+            let _ = app.state::<service::AppTimerService>().checkpoint();
+        })?;
+    Ok(())
 }
