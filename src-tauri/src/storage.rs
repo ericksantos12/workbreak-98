@@ -129,7 +129,7 @@ impl JsonStorage {
             .path
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("flowmodoro.json");
+            .unwrap_or("workbreak-98.json");
         parent.join(format!(
             ".{file_name}.{}.{}.tmp",
             std::process::id(),
@@ -214,7 +214,7 @@ mod tests {
         fn new() -> Self {
             let id = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!(
-                "flowmodoro-storage-test-{}-{id}",
+                "workbreak-98-storage-test-{}-{id}",
                 std::process::id()
             ));
             fs::create_dir(&path).unwrap();

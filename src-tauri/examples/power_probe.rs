@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use flowmodoro_lib::{
+use workbreak_98_lib::{
     clock::unbiased_time_100ns,
     power::{PowerEvent, PowerNotification, PowerSubscription},
 };

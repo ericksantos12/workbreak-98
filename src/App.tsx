@@ -25,7 +25,7 @@ function App() {
       <section className="window app-window" aria-labelledby="app-title">
         <div className="title-bar" data-tauri-drag-region>
           <div className="title-bar-text" id="app-title" data-tauri-drag-region>
-            Flowmodoro
+            WorkBreak 98
           </div>
           <div className="title-bar-controls">
             <button

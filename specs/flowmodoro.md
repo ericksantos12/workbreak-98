@@ -1,4 +1,4 @@
-# Especificação: Flowmodoro desktop
+# Especificação: WorkBreak 98
 
 Status: APROVADA pelo usuário em 15/09/2026 — fase SPECIFY concluída.
 A aprovação inclui as propostas de comportamento abaixo e o escopo inicial Windows. Escolhas técnicas e dependências foram aprovadas em `tasks/plan.md`.

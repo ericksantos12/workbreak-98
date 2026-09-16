@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "flowmodoro",
+  "productName": "WorkBreak 98",
   "version": "0.1.0",
-  "identifier": "com.erick.flowmodoro",
+  "identifier": "com.erick.workbreak98",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "flowmodoro",
+        "title": "WorkBreak 98",
         "width": 800,
         "height": 600,
         "decorations": false

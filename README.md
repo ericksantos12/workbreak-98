@@ -1,6 +1,6 @@
-# Tauri + React + Typescript
+# WorkBreak 98
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Cronômetro Flowmodoro desktop com visual inspirado no Windows 98.
 
 ## Executar o aplicativo
 

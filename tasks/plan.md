@@ -1,4 +1,4 @@
-# Plano técnico: Flowmodoro Windows
+# Plano técnico: WorkBreak 98
 
 Status: APROVADO pelo usuário em 15/09/2026 — fase PLAN concluída.
 Base: `specs/flowmodoro.md`, aprovada em 15/09/2026.
@@ -77,7 +77,7 @@ Sem novas dependências npm planejadas. Se o spike exigir outra biblioteca ou mu
 - `src-tauri/src/commands.rs`: contrato IPC e validação de ações; `lib.rs` apenas wiring e ciclo de vida.
 - `src/flowmodoro.ts`: contrato/cliente IPC; `src/useFlowmodoro.ts`: sincronização da UI.
 - `src/components/`: painéis que só serão extraídos quando a fatia correspondente precisar; `src/formatTime.ts` para apresentação de duração.
-- `src/App.tsx` e `src/App.css`: composição e tema. Preservar `main.rs`, nome `flowmodoro_lib` e schemas gerados.
+- `src/App.tsx` e `src/App.css`: composição e tema. Preservar `main.rs`, nome `workbreak_98_lib` e schemas gerados.
 
 Esses são destinos propostos, não scaffolding para criar em massa. Cada incremento altera apenas os arquivos necessários; dividir qualquer unidade que ultrapasse cinco arquivos contando testes e manifests.
 
