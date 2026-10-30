@@ -472,9 +472,10 @@ impl FocusTimer {
         let break_elapsed_100ns = self.break_elapsed_at(now_100ns)?;
         self.break_balance_100ns = remaining_100ns;
         self.focus_balance_anchor_100ns = focus_elapsed_100ns;
-        self.state = TimerState::FocusRunning {
-            accumulated_100ns: focus_elapsed_100ns,
-            started_at_100ns: now_100ns,
+        self.state = TimerState::BreakCompleted {
+            focus_elapsed_100ns,
+            break_earned_100ns: self.earned_break_at(now_100ns)?,
+            remaining_100ns,
         };
         self.break_elapsed_100ns = break_elapsed_100ns;
         self.break_elapsed_anchor_100ns = None;
@@ -815,7 +816,7 @@ mod tests {
     }
 
     #[test]
-    fn break_counts_down_only_after_manual_start_and_starts_focus_on_expiry() {
+    fn break_counts_down_only_after_manual_start_and_waits_on_expiry() {
         let mut timer = FocusTimer::default();
         timer.start(0).unwrap();
         timer.finish(30 * MINUTE).unwrap();
@@ -833,7 +834,7 @@ mod tests {
         timer.resume_break(70 * MINUTE).unwrap();
         assert_eq!(timer.break_remaining_at(75 * MINUTE).unwrap(), 0);
         assert!(timer.normalize_break(75 * MINUTE).unwrap());
-        assert!(matches!(timer.state(), TimerState::FocusRunning { .. }));
+        assert!(matches!(timer.state(), TimerState::BreakCompleted { .. }));
         assert_eq!(timer.effective_at(75 * MINUTE).unwrap(), 30 * MINUTE);
         assert_eq!(timer.break_remaining_at(75 * MINUTE).unwrap(), 0);
     }

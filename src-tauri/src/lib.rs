@@ -60,9 +60,29 @@ pub fn run() {
 fn spawn_checkpoint_worker(app: tauri::AppHandle) -> std::io::Result<()> {
     thread::Builder::new()
         .name("timer-checkpoint".into())
-        .spawn(move || loop {
-            thread::sleep(Duration::from_secs(1));
-            let _ = app.state::<service::AppTimerService>().checkpoint();
+        .spawn(move || {
+            let mut previous_phase = app
+                .state::<service::AppTimerService>()
+                .snapshot()
+                .ok()
+                .map(|s| s.phase);
+            loop {
+                thread::sleep(Duration::from_secs(1));
+                let service = app.state::<service::AppTimerService>();
+                let _ = service.checkpoint();
+                if let Ok(snapshot) = service.snapshot() {
+                    if snapshot.phase == service::TimerPhase::BreakCompleted
+                        && previous_phase == Some(service::TimerPhase::BreakRunning)
+                        && snapshot.break_remaining_ms <= 0
+                    {
+                        #[cfg(windows)]
+                        unsafe {
+                            windows_sys::Win32::System::Diagnostics::Debug::MessageBeep(0xFFFFFFFF);
+                        }
+                    }
+                    previous_phase = Some(snapshot.phase);
+                }
+            }
         })?;
     Ok(())
 }

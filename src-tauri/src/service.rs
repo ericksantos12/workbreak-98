@@ -172,9 +172,6 @@ impl<C: Clock> TimerService<C> {
         state.timer.finish(now_100ns)?;
         if matches!(state.timer.state(), TimerState::BreakReady { .. }) {
             state.timer.start_break(now_100ns)?;
-            if matches!(state.timer.state(), TimerState::BreakCompleted { .. }) {
-                state.timer.start(now_100ns)?;
-            }
         }
         state.revision = next_revision;
         self.persist_at(&mut state, now_100ns);
@@ -209,13 +206,9 @@ impl<C: Clock> TimerService<C> {
         let now_100ns = self.now_100ns()?;
         self.normalize_at(&mut state, now_100ns)?;
         validate_revision(&state, expected_revision)?;
-        if !state.power_available {
-            return Err(ServiceError::PowerUnavailable);
-        }
         if !matches!(state.timer.state(), TimerState::BreakCompleted { .. }) {
             state.timer.end_break(now_100ns)?;
         }
-        state.timer.start(now_100ns)?;
         state.revision = next_revision(&state)?;
         self.persist_at(&mut state, now_100ns);
         snapshot_at(&state, now_100ns)
@@ -907,7 +900,7 @@ mod tests {
     }
 
     #[test]
-    fn break_completion_starts_a_new_focus_automatically() {
+    fn break_completion_waits_for_manual_focus_start() {
         let clock = FakeClock::default();
         let service = TimerService::new(clock.clone());
         service.start_focus(0).unwrap();
@@ -917,12 +910,21 @@ mod tests {
 
         let completed = service.snapshot().unwrap();
 
-        assert_eq!(completed.phase, TimerPhase::FocusRunning);
+        assert_eq!(completed.phase, TimerPhase::BreakCompleted);
         assert_eq!(completed.break_remaining_ms, 0);
         assert_eq!(completed.revision, 3);
         assert_eq!(completed.break_elapsed_ms, 60 * 1_000);
         assert_eq!(completed.focus_elapsed_ms, 3 * 60 * 1_000);
-        assert_eq!(completed.break_earned_ms, 0);
+        assert_eq!(completed.break_earned_ms, 60 * 1_000);
+        clock.set(5 * 60 * 10_000_000);
+        assert_eq!(
+            service.snapshot().unwrap().phase,
+            TimerPhase::BreakCompleted
+        );
+        assert_eq!(
+            service.start_focus(3).unwrap().phase,
+            TimerPhase::FocusRunning
+        );
     }
 
     #[test]
@@ -960,7 +962,7 @@ mod tests {
     }
 
     #[test]
-    fn ending_break_preserves_all_display_values_until_reset() {
+    fn ending_break_waits_for_manual_focus_start() {
         let clock = FakeClock::default();
         let service = TimerService::new(clock.clone());
         service.start_focus(0).unwrap();
@@ -970,16 +972,20 @@ mod tests {
 
         let snapshot = service.end_break(2).unwrap();
 
-        assert_eq!(snapshot.phase, TimerPhase::FocusRunning);
+        assert_eq!(snapshot.phase, TimerPhase::BreakCompleted);
         assert_eq!(snapshot.focus_elapsed_ms, 30 * 60 * 1_000);
-        assert_eq!(snapshot.break_earned_ms, 5 * 60 * 1_000);
-        assert_eq!(snapshot.break_remaining_ms, 0);
+        assert_eq!(snapshot.break_earned_ms, 10 * 60 * 1_000);
+        assert_eq!(snapshot.break_remaining_ms, 5 * 60 * 1_000);
         assert_eq!(snapshot.break_elapsed_ms, 5 * 60 * 1_000);
-        assert_eq!(service.reset_focus(3).unwrap().focus_elapsed_ms, 0);
+        assert_eq!(
+            service.start_focus(3).unwrap().phase,
+            TimerPhase::FocusRunning
+        );
+        assert_eq!(service.reset_focus(4).unwrap().focus_elapsed_ms, 0);
     }
 
     #[test]
-    fn ending_break_after_its_balance_starts_focus_with_negative_balance() {
+    fn ending_break_after_its_balance_waits_with_negative_balance() {
         let clock = FakeClock::default();
         let service = TimerService::new(clock.clone());
         service.start_focus(0).unwrap();
@@ -989,15 +995,15 @@ mod tests {
 
         let snapshot = service.snapshot().unwrap();
 
-        assert_eq!(snapshot.phase, TimerPhase::FocusRunning);
-        assert_eq!(snapshot.break_earned_ms, -(60 * 1_000));
-        assert_eq!(snapshot.break_remaining_ms, 0);
+        assert_eq!(snapshot.phase, TimerPhase::BreakCompleted);
+        assert_eq!(snapshot.break_earned_ms, 10 * 60 * 1_000);
+        assert_eq!(snapshot.break_remaining_ms, -(60 * 1_000));
         assert_eq!(snapshot.break_elapsed_ms, 11 * 60 * 1_000);
         assert_eq!(snapshot.focus_elapsed_ms, 30 * 60 * 1_000);
     }
 
     #[test]
-    fn zero_new_break_after_negative_balance_starts_focus_automatically() {
+    fn zero_new_break_after_negative_balance_waits_for_focus() {
         let clock = FakeClock::default();
         let service = TimerService::new(clock.clone());
         service.start_focus(0).unwrap();
@@ -1005,11 +1011,12 @@ mod tests {
         service.finish_focus(1).unwrap();
         clock.set(41 * 60 * 10_000_000);
         let snapshot = service.snapshot().unwrap();
+        service.start_focus(snapshot.revision).unwrap();
         clock.set(44 * 60 * 10_000_000);
 
-        let next_focus = service.finish_focus(snapshot.revision).unwrap();
+        let next_focus = service.finish_focus(snapshot.revision + 1).unwrap();
 
-        assert_eq!(next_focus.phase, TimerPhase::FocusRunning);
+        assert_eq!(next_focus.phase, TimerPhase::BreakCompleted);
         assert_eq!(next_focus.break_earned_ms, 0);
         assert_eq!(next_focus.break_elapsed_ms, 11 * 60 * 1_000);
     }
