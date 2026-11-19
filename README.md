@@ -166,8 +166,8 @@ A versão do changelog é aplicada a npm, Cargo e Tauri durante o build, sem com
 
 Configuração e observações:
 
-- Em **Settings → Actions → General → Workflow permissions**, habilite **Allow GitHub Actions to create and approve pull requests**. Os workflows usam o `GITHUB_TOKEN` do próprio repositório.
-- PRs abertos com o `GITHUB_TOKEN` não disparam outros workflows. Por isso o PR de release não roda o Check sozinho; os testes já rodam no push para `dev`.
+- O PR de release é aberto com um token pessoal fine-grained salvo no segredo **`RELEASE_TOKEN`** (**Settings → Secrets and variables → Actions**). Restrinja-o a este repositório com **Contents** e **Pull requests** em *Read and write* e defina uma expiração. Com ele, o PR dispara o Check normalmente.
+- Sem o segredo, o job `release-pr` falha com um aviso. Os demais jobs, incluindo a publicação da release na `main`, usam o `GITHUB_TOKEN` automático e não precisam de configuração.
 - Se o build falhar, execute novamente o job ou use **Actions → Build and release → Run workflow** selecionando `dev` ou `main`. Nenhuma release é publicada enquanto o build não terminar com sucesso.
 
 ### Organização do código
