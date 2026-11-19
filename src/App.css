@@ -1,4 +1,5 @@
 :root { color: #222; background: #c0c0c0; font-synthesis: none; }
+.title-bar-text { display: flex; align-items: center; gap: 4px; }
 * { box-sizing: border-box; }
 html, body, #root { min-width: 320px; height: 100%; min-height: 0; margin: 0; }
 body { height: 100vh; overflow: hidden; background: #c0c0c0; }
@@ -6,12 +7,12 @@ button:focus-visible, select:focus-visible { outline: 1px dotted #000; outline-o
 .desktop-shell { height: 100%; min-height: 0; }
 .app-window { width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .app-body { flex: 1 1 0; min-height: 0; overflow: auto; margin: 0; padding: 20px; }
-.timer-panel { max-width: 1020px; margin: 0 auto; display: grid; gap: 18px; }
+.timer-panel { max-width: 1020px; margin: 0 auto; display: grid; gap: 14px; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #808080; padding-bottom: 10px; }
 .section-heading h1 { margin: 0; font-size: 20px; line-height: 1.2; }
 .timer-workspace { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr); gap: 16px; align-items: stretch; }
 .timer-panel fieldset { min-width: 0; margin: 0; }
-.main-clock { display: flex; flex-direction: column; min-height: 300px; padding: 18px 20px 20px; }
+.main-clock { display: flex; flex-direction: column; min-height: 272px; padding: 18px 20px 20px; }
 .clock-face, .balance-face { background: #081008; color: #52ff69; font-family: "Courier New", monospace; font-weight: bold; line-height: 1; letter-spacing: .035em; text-align: center; white-space: nowrap; box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px #808080; }
 .clock-face { font-size: clamp(36px, 6vw, 68px); padding: 34px 8px; margin: auto 0 0; }
 .clock-caption { margin: 10px 0 auto; text-align: center; }
@@ -49,3 +50,64 @@ button:focus-visible, select:focus-visible { outline: 1px dotted #000; outline-o
 }
 @media (max-height: 480px) { .app-body { padding: 8px; } .main-clock { min-height: 220px; } }
 @supports (height: 100dvh) { body { height: 100dvh; } }
+
+/* Hero progression panel. Pixel art is shown at 2x: the 160x48 world is 320x96 and
+   hero frames are 24x28 (48x56). Layers wrap horizontally and scroll while focusing. */
+.hero-panel { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 6px 14px; }
+.hero-stage { position: relative; width: 320px; max-width: 100%; height: 96px; overflow: hidden; background: #3f8fd8; box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px #808080; }
+.hero-world, .scene-layer { position: absolute; inset: 0; }
+.scene-layer, .hero-sprite, .camp-fire { background-repeat: no-repeat; image-rendering: pixelated; }
+.scene-layer { background-repeat: repeat-x; background-size: 320px 96px; animation: scene-scroll linear infinite; animation-play-state: paused; }
+.is-traveling .scene-layer { animation-play-state: running; }
+.scene-layer--sky { animation: none; }
+.scene-layer--clouds { animation-duration: 60s; }
+.scene-layer--mountains { animation-duration: 40s; }
+.scene-layer--hills { animation-duration: 16s; }
+.scene-layer--ground { animation-duration: 5s; }
+.scene-layer--camp { background-repeat: no-repeat; animation: none; }
+.hero-stage--camp .hero-world { filter: brightness(.72) saturate(.85) sepia(.18); }
+@keyframes scene-scroll { from { background-position-x: 0; } to { background-position-x: -320px; } }
+.hero-sprite { position: absolute; left: 60px; top: 26px; width: 48px; height: 56px; background-position: 0 0; }
+.hero-stage--camp .hero-sprite { left: 92px; }
+.camp-fire { position: absolute; left: 120px; top: 46px; width: 28px; height: 36px; background-size: 168px 36px; animation: hero-frames-6 .75s steps(6) infinite; }
+.hero-sprite--idle { background-size: 96px 56px; animation: hero-blink 1.96s step-end infinite; }
+.hero-sprite--adventure { background-size: 192px 56px; animation: hero-frames-4 .5s steps(4) infinite; }
+.hero-sprite--camp { background-size: 96px 56px; animation: hero-sit 2.6s step-end infinite; }
+.hero-sprite--sleep { background-size: 144px 56px; animation: hero-frames-3 1.5s steps(3) infinite; }
+@keyframes hero-blink { 0% { background-position-x: 0; } 91.8% { background-position-x: -48px; } 100% { background-position-x: -48px; } }
+@keyframes hero-sit { 0% { background-position-x: 0; } 92.3% { background-position-x: -48px; } 100% { background-position-x: -48px; } }
+@keyframes hero-frames-3 { from { background-position-x: 0; } to { background-position-x: -144px; } }
+@keyframes hero-frames-4 { from { background-position-x: 0; } to { background-position-x: -192px; } }
+@keyframes hero-frames-6 { from { background-position-x: 0; } to { background-position-x: -168px; } }
+/* Foes walk in from the right; at 66% of the 4s cycle the staff fires, at 78% the foe
+   is hit and turns into smoke. Sizes are the 2x frame sizes; feet rest on the ground. */
+.foe, .spell-bolt, .foe-poof { position: absolute; background-repeat: no-repeat; image-rendering: pixelated; }
+.foe { bottom: 14px; opacity: 0; animation: foe-approach 4s linear infinite, foe-step .5s steps(2) infinite; }
+.foe--slime { width: 28px; height: 22px; background-size: 56px 22px; --foe-w: 28px; }
+.foe--goblin { width: 30px; height: 34px; background-size: 60px 34px; --foe-w: 30px; }
+.foe--ogre { width: 44px; height: 48px; background-size: 88px 48px; --foe-w: 44px; }
+.foe--golem { width: 56px; height: 60px; background-size: 112px 60px; --foe-w: 56px; }
+.foe-poof--slime { --foe-w: 28px; } .foe-poof--goblin { --foe-w: 30px; } .foe-poof--ogre { --foe-w: 44px; } .foe-poof--golem { --foe-w: 56px; }
+.spell-bolt { top: 50px; width: 20px; height: 12px; background-size: 40px 12px; opacity: 0; animation: spell-fly 4s linear infinite, foe-step .2s steps(2) infinite; }
+.foe-poof { bottom: 14px; left: calc(150px + (var(--foe-w) - 36px) / 2); width: 36px; height: 36px; background-size: 144px 36px; opacity: 0; animation: foe-poof 4s step-end infinite; }
+@keyframes foe-approach { 0% { left: 330px; opacity: 1; } 78% { left: 150px; opacity: 1; } 78.1%, 100% { left: 150px; opacity: 0; } }
+/* Two-frame strips: 200% of (box - strip) steps through exactly two frames. */
+@keyframes foe-step { from { background-position-x: 0; } to { background-position-x: 200%; } }
+@keyframes spell-fly { 0%, 66% { left: 96px; opacity: 0; } 66.1% { left: 96px; opacity: 1; } 78% { left: 130px; opacity: 1; } 78.1%, 100% { opacity: 0; } }
+@keyframes foe-poof { 0% { opacity: 0; background-position-x: 0; } 78% { opacity: 1; background-position-x: 0; } 81.5% { background-position-x: -36px; } 85% { background-position-x: -72px; } 88.5% { background-position-x: -108px; } 92%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .hero-sprite, .scene-layer, .camp-fire { animation: none; }
+  .foe, .spell-bolt, .foe-poof { display: none; }
+}
+.hero-stats { display: grid; gap: 6px; min-width: 0; }
+.hero-stats p { margin: 0; }
+.hero-level strong { font-size: 13px; }
+.hero-progress { height: 18px; padding: 3px; }
+.reward-notice { width: 200px; }
+.reward-notice .window-body { margin: 6px 8px 8px; display: grid; gap: 4px; justify-items: start; }
+.reward-notice p { margin: 0; font-weight: bold; }
+.reward-notice button { justify-self: end; margin-top: 4px; }
+@media (max-width: 680px) {
+  .hero-panel { grid-template-columns: auto minmax(0, 1fr); }
+  .hero-reward { grid-column: 1 / -1; }
+}

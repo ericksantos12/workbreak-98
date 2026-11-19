@@ -17,6 +17,8 @@ function snapshot(revision: number, focusElapsedMs = 0): TimerSnapshot {
     breakRemainingMs: 0,
     breakElapsedMs: 0,
     persistenceStatus: "available",
+    focusBlockMs: 0,
+    progression: { level: 1, xpIntoLevel: 0, xpForNextLevel: 60, totalXp: 0, lastReward: null },
   };
 }
 
@@ -136,6 +138,8 @@ describe("timer controller", () => {
       breakRemainingMs: 0,
       breakElapsedMs: 0,
       persistenceStatus: "available",
+      focusBlockMs: 0,
+      progression: { level: 1, xpIntoLevel: 0, xpForNextLevel: 60, totalXp: 0, lastReward: null },
     });
     await actionPromise;
     slowRefresh.resolve(snapshot(1, 5));

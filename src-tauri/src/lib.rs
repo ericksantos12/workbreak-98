@@ -1,6 +1,7 @@
 pub mod clock;
 mod commands;
 pub mod power;
+pub mod progression;
 pub mod service;
 pub mod storage;
 pub mod timer;

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     clock::{Clock, SystemClock},
+    progression::{Progression, ProgressionSnapshot},
     storage::{JsonStorage, LoadResult},
     timer::{FocusRatio, FocusTimer, PersistedTimer, TimerError, TimerState},
 };
@@ -43,6 +44,9 @@ pub struct TimerSnapshot {
     pub break_remaining_ms: i64,
     pub break_elapsed_ms: u64,
     pub persistence_status: PersistenceStatus,
+    /// Effective focus in the current block; drives the size of the hero's foes.
+    pub focus_block_ms: u64,
+    pub progression: ProgressionSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,6 +89,7 @@ impl From<TimerError> for ServiceError {
 
 struct ServiceState {
     timer: FocusTimer,
+    progression: Progression,
     revision: u32,
     persistence_status: PersistenceStatus,
     power_available: bool,
@@ -104,6 +109,7 @@ impl<C: Clock> TimerService<C> {
             clock,
             state: Mutex::new(ServiceState {
                 timer: FocusTimer::default(),
+                progression: Progression::default(),
                 revision: 0,
                 persistence_status: PersistenceStatus::Unavailable,
                 power_available: true,
@@ -113,30 +119,41 @@ impl<C: Clock> TimerService<C> {
     }
 
     pub fn from_storage(clock: C, storage: JsonStorage) -> Self {
-        let (timer, revision, persistence_status) = match storage.load::<AppDocument>() {
-            Ok(LoadResult::Missing) => (FocusTimer::default(), 0, PersistenceStatus::Available),
-            Ok(LoadResult::Loaded(document)) if document.revision < u32::MAX => {
-                match clock
-                    .now_100ns()
-                    .ok()
-                    .and_then(|now| FocusTimer::restore(document.timer, now).ok())
-                {
-                    Some(timer) => (timer, document.revision, PersistenceStatus::Available),
-                    None => (FocusTimer::default(), 0, PersistenceStatus::Blocked),
+        let fresh = || (FocusTimer::default(), Progression::default(), 0);
+        let ((timer, progression, revision), persistence_status) =
+            match storage.load::<AppDocument>() {
+                Ok(LoadResult::Missing) => (fresh(), PersistenceStatus::Available),
+                Ok(LoadResult::Loaded(document)) if document.revision < u32::MAX => {
+                    match clock.now_100ns().ok().and_then(|now| {
+                        let timer = FocusTimer::restore(document.timer, now).ok()?;
+                        let focus_elapsed_100ns = timer.effective_at(now).ok()?;
+                        // Documents saved before progression existed start the hero at the
+                        // current focus, so earlier cycles of the session are not granted.
+                        let progression = document
+                            .progression
+                            .unwrap_or_else(|| Progression::starting_at(focus_elapsed_100ns));
+                        progression
+                            .is_consistent_with(focus_elapsed_100ns)
+                            .then_some((timer, progression))
+                    }) {
+                        Some((timer, progression)) => (
+                            (timer, progression, document.revision),
+                            PersistenceStatus::Available,
+                        ),
+                        None => (fresh(), PersistenceStatus::Blocked),
+                    }
                 }
-            }
-            Ok(LoadResult::Loaded(_))
-            | Ok(LoadResult::Invalid(_))
-            | Ok(LoadResult::UnsupportedVersion(_)) => {
-                (FocusTimer::default(), 0, PersistenceStatus::Blocked)
-            }
-            Err(_) => (FocusTimer::default(), 0, PersistenceStatus::Unavailable),
-        };
+                Ok(LoadResult::Loaded(_))
+                | Ok(LoadResult::Invalid(_))
+                | Ok(LoadResult::UnsupportedVersion(_)) => (fresh(), PersistenceStatus::Blocked),
+                Err(_) => (fresh(), PersistenceStatus::Unavailable),
+            };
 
         Self {
             clock,
             state: Mutex::new(ServiceState {
                 timer,
+                progression,
                 revision,
                 persistence_status,
                 power_available: true,
@@ -169,9 +186,9 @@ impl<C: Clock> TimerService<C> {
         validate_revision(&state, expected_revision)?;
         let next_revision = next_revision(&state)?;
         let now_100ns = self.now_100ns()?;
-        state.timer.finish(now_100ns)?;
+        mutate(&mut state, |timer| timer.finish(now_100ns))?;
         if matches!(state.timer.state(), TimerState::BreakReady { .. }) {
-            state.timer.start_break(now_100ns)?;
+            mutate(&mut state, |timer| timer.start_break(now_100ns))?;
         }
         state.revision = next_revision;
         self.persist_at(&mut state, now_100ns);
@@ -183,7 +200,7 @@ impl<C: Clock> TimerService<C> {
         validate_revision(&state, expected_revision)?;
         let next_revision = next_revision(&state)?;
         let now_100ns = self.now_100ns()?;
-        state.timer.reset(now_100ns)?;
+        mutate(&mut state, |timer| timer.reset(now_100ns))?;
         state.revision = next_revision;
         self.persist_at(&mut state, now_100ns);
         snapshot_at(&state, now_100ns)
@@ -207,7 +224,7 @@ impl<C: Clock> TimerService<C> {
         self.normalize_at(&mut state, now_100ns)?;
         validate_revision(&state, expected_revision)?;
         if !matches!(state.timer.state(), TimerState::BreakCompleted { .. }) {
-            state.timer.end_break(now_100ns)?;
+            mutate(&mut state, |timer| timer.end_break(now_100ns))?;
         }
         state.revision = next_revision(&state)?;
         self.persist_at(&mut state, now_100ns);
@@ -253,12 +270,12 @@ impl<C: Clock> TimerService<C> {
             TimerState::FocusRunning {
                 started_at_100ns, ..
             } if at_100ns >= started_at_100ns => {
-                state.timer.pause(at_100ns)?;
+                mutate(&mut state, |timer| timer.pause(at_100ns))?;
             }
             TimerState::BreakRunning {
                 started_at_100ns, ..
             } if at_100ns >= started_at_100ns => {
-                state.timer.pause_break(at_100ns)?;
+                mutate(&mut state, |timer| timer.pause_break(at_100ns))?;
             }
             _ => return Ok(()),
         }
@@ -282,8 +299,12 @@ impl<C: Clock> TimerService<C> {
         ) {
             let next_revision = next_revision(&state)?;
             match state.timer.state() {
-                TimerState::FocusRunning { .. } => state.timer.pause(now_100ns)?,
-                TimerState::BreakRunning { .. } => state.timer.pause_break(now_100ns)?,
+                TimerState::FocusRunning { .. } => {
+                    mutate(&mut state, |timer| timer.pause(now_100ns))?
+                }
+                TimerState::BreakRunning { .. } => {
+                    mutate(&mut state, |timer| timer.pause_break(now_100ns))?
+                }
                 _ => unreachable!(),
             }
             state.revision = next_revision;
@@ -314,7 +335,7 @@ impl<C: Clock> TimerService<C> {
             return Err(ServiceError::PowerUnavailable);
         }
         let next_revision = next_revision(&state)?;
-        action(&mut state.timer, now_100ns)?;
+        mutate(&mut state, |timer| action(timer, now_100ns))?;
         state.revision = next_revision;
         self.persist_at(&mut state, now_100ns);
         snapshot_at(&state, now_100ns)
@@ -347,6 +368,7 @@ impl<C: Clock> TimerService<C> {
         let document = AppDocument {
             revision: state.revision,
             timer,
+            progression: Some(state.progression),
         };
         state.persistence_status = if storage.write(&document).is_ok() {
             PersistenceStatus::Available
@@ -356,7 +378,12 @@ impl<C: Clock> TimerService<C> {
     }
 
     fn normalize_at(&self, state: &mut ServiceState, now_100ns: u64) -> Result<(), ServiceError> {
-        if state.timer.normalize_break(now_100ns)? {
+        let mut changed = false;
+        mutate(state, |timer| {
+            changed = timer.normalize_break(now_100ns)?;
+            Ok(())
+        })?;
+        if changed {
             state.revision = next_revision(state)?;
             self.persist_at(state, now_100ns);
         }
@@ -379,16 +406,31 @@ fn snapshot_at(state: &ServiceState, now_100ns: u64) -> Result<TimerSnapshot, Se
         TimerState::BreakPaused { .. } => TimerPhase::BreakPaused,
         TimerState::BreakCompleted { .. } => TimerPhase::BreakCompleted,
     };
+    let focus_elapsed_100ns = state.timer.effective_at(now_100ns)?;
     Ok(TimerSnapshot {
         revision: state.revision,
         phase,
-        focus_elapsed_ms: state.timer.effective_at(now_100ns)? / 10_000,
+        focus_elapsed_ms: focus_elapsed_100ns / 10_000,
         ratio: state.timer.ratio().value(),
         break_earned_ms: signed_ms(state.timer.earned_break_at(now_100ns)?),
         break_remaining_ms: signed_ms(state.timer.break_remaining_at(now_100ns)?),
         break_elapsed_ms: state.timer.break_elapsed_at(now_100ns)? / 10_000,
         persistence_status: state.persistence_status,
+        focus_block_ms: state.progression.focus_block_100ns(focus_elapsed_100ns) / 10_000,
+        progression: state.progression.snapshot(),
     })
+}
+
+/// Applies one timer mutation and lets the hero progression observe the transition,
+/// so both change under the same lock and are saved by the same write.
+fn mutate(
+    state: &mut ServiceState,
+    action: impl FnOnce(&mut FocusTimer) -> Result<(), TimerError>,
+) -> Result<(), TimerError> {
+    let before = state.timer.state();
+    action(&mut state.timer)?;
+    state.progression.observe(before, state.timer.state());
+    Ok(())
 }
 
 fn signed_ms(value_100ns: i128) -> i64 {
@@ -407,6 +449,8 @@ fn signed_ms(value_100ns: i128) -> i64 {
 struct AppDocument {
     revision: u32,
     timer: PersistedTimer,
+    #[serde(default)]
+    progression: Option<Progression>,
 }
 
 fn validate_revision(state: &ServiceState, expected: u32) -> Result<(), ServiceError> {
@@ -1019,5 +1063,196 @@ mod tests {
         assert_eq!(next_focus.phase, TimerPhase::BreakCompleted);
         assert_eq!(next_focus.break_earned_ms, 0);
         assert_eq!(next_focus.break_elapsed_ms, 11 * 60 * 1_000);
+    }
+
+    const MINUTE: u64 = 60 * 10_000_000;
+
+    #[test]
+    fn finishing_focus_grants_xp_for_active_time_only() {
+        let clock = FakeClock::default();
+        let service = TimerService::new(clock.clone());
+        service.start_focus(0).unwrap();
+        clock.set(10 * MINUTE);
+        service.pause_focus(1).unwrap();
+        clock.set(15 * MINUTE);
+        service.resume_focus(2).unwrap();
+        clock.set(35 * MINUTE);
+
+        let snapshot = service.finish_focus(3).unwrap();
+
+        assert_eq!(snapshot.progression.total_xp, 30);
+        let reward = snapshot.progression.last_reward.unwrap();
+        assert_eq!(reward.kind, crate::progression::RewardKind::Focus);
+        assert_eq!(reward.xp, 30);
+    }
+
+    #[test]
+    fn completed_break_grants_rest_bonus_and_next_block_counts_only_new_focus() {
+        let clock = FakeClock::default();
+        let service = TimerService::new(clock.clone());
+        service.start_focus(0).unwrap();
+        clock.set(30 * MINUTE);
+        service.finish_focus(1).unwrap();
+        clock.set(40 * MINUTE);
+
+        let rested = service.snapshot().unwrap();
+        assert_eq!(rested.phase, TimerPhase::BreakCompleted);
+        assert_eq!(rested.progression.total_xp, 36);
+        assert_eq!(
+            rested.progression.last_reward.unwrap().kind,
+            crate::progression::RewardKind::Rest
+        );
+
+        service.start_focus(rested.revision).unwrap();
+        clock.set(60 * MINUTE);
+        let second = service.finish_focus(rested.revision + 1).unwrap();
+        assert_eq!(second.progression.last_reward.unwrap().xp, 20);
+        assert_eq!(second.progression.total_xp, 56);
+    }
+
+    #[test]
+    fn ending_break_early_discards_the_rest_bonus() {
+        let clock = FakeClock::default();
+        let service = TimerService::new(clock.clone());
+        service.start_focus(0).unwrap();
+        clock.set(30 * MINUTE);
+        service.finish_focus(1).unwrap();
+        clock.set(35 * MINUTE);
+
+        let ended = service.end_break(2).unwrap();
+
+        assert_eq!(ended.phase, TimerPhase::BreakCompleted);
+        assert_eq!(ended.progression.total_xp, 30);
+    }
+
+    #[test]
+    fn reset_never_grants_or_removes_xp() {
+        let clock = FakeClock::default();
+        let service = TimerService::new(clock.clone());
+        service.start_focus(0).unwrap();
+        clock.set(30 * MINUTE);
+        service.finish_focus(1).unwrap();
+        let reset = service.reset_focus(2).unwrap();
+        assert_eq!(reset.progression.total_xp, 30);
+
+        service.start_focus(3).unwrap();
+        clock.set(60 * MINUTE);
+        let discarded = service.reset_focus(4).unwrap();
+        assert_eq!(discarded.progression.total_xp, 30);
+    }
+
+    #[test]
+    fn stale_or_repeated_finish_grants_xp_once() {
+        let clock = FakeClock::default();
+        let service = TimerService::new(clock.clone());
+        service.start_focus(0).unwrap();
+        clock.set(30 * MINUTE);
+        service.finish_focus(1).unwrap();
+
+        assert!(service.finish_focus(1).is_err());
+        assert!(service.finish_focus(2).is_err());
+        assert_eq!(service.snapshot().unwrap().progression.total_xp, 30);
+    }
+
+    #[test]
+    fn progression_survives_recovery_and_pending_bonus_is_granted_once() {
+        let directory = TestDirectory::new();
+        let clock = FakeClock::default();
+        let service = TimerService::from_storage(clock.clone(), directory.storage());
+        service.start_focus(0).unwrap();
+        clock.set(30 * MINUTE);
+        service.finish_focus(1).unwrap();
+        clock.set(32 * MINUTE);
+        service.checkpoint().unwrap();
+        drop(service);
+
+        clock.set(100 * MINUTE);
+        let recovered = TimerService::from_storage(clock.clone(), directory.storage());
+        let paused = recovered.snapshot().unwrap();
+        assert_eq!(paused.phase, TimerPhase::BreakPaused);
+        assert_eq!(paused.progression.total_xp, 30);
+
+        recovered.resume_break(paused.revision).unwrap();
+        clock.set(108 * MINUTE);
+        let completed = recovered.snapshot().unwrap();
+        assert_eq!(completed.phase, TimerPhase::BreakCompleted);
+        assert_eq!(completed.progression.total_xp, 36);
+        drop(recovered);
+
+        let reopened = TimerService::from_storage(clock, directory.storage());
+        assert_eq!(reopened.snapshot().unwrap().progression.total_xp, 36);
+    }
+
+    #[test]
+    fn document_without_progression_loads_with_zero_xp() {
+        let directory = TestDirectory::new();
+        let storage = directory.storage();
+        storage
+            .write(&serde_json::json!({
+                "revision": 1,
+                "timer": { "phase": "idle", "elapsed100ns": 0, "ratio": 3 }
+            }))
+            .unwrap();
+
+        let service = TimerService::from_storage(FakeClock::default(), storage);
+        let snapshot = service.snapshot().unwrap();
+
+        assert_eq!(snapshot.persistence_status, PersistenceStatus::Available);
+        assert_eq!(snapshot.progression.total_xp, 0);
+        assert_eq!(snapshot.progression.level, 1);
+    }
+
+    #[test]
+    fn impossible_progression_blocks_automatic_overwrite() {
+        let directory = TestDirectory::new();
+        let path = directory.0.join("state.json");
+        let invalid = br#"{"version":1,"data":{"revision":0,"timer":{"phase":"idle","elapsed100ns":0,"ratio":3},"progression":{"totalXp":5,"pendingRestBonusXp":999}}}"#;
+        fs::write(&path, invalid).unwrap();
+        let service = TimerService::from_storage(FakeClock::default(), directory.storage());
+
+        let started = service.start_focus(0).unwrap();
+
+        assert_eq!(started.persistence_status, PersistenceStatus::Blocked);
+        assert_eq!(started.progression.total_xp, 0);
+        assert_eq!(fs::read(path).unwrap(), invalid);
+    }
+
+    #[test]
+    fn legacy_document_mid_focus_does_not_grant_earlier_cycles() {
+        let directory = TestDirectory::new();
+        let storage = directory.storage();
+        storage
+            .write(&serde_json::json!({
+                "revision": 7,
+                "timer": { "phase": "paused", "elapsed100ns": 90 * MINUTE, "ratio": 3 }
+            }))
+            .unwrap();
+        let clock = FakeClock::default();
+        let service = TimerService::from_storage(clock.clone(), storage);
+        service.resume_focus(7).unwrap();
+        clock.set(30 * MINUTE);
+
+        let finished = service.finish_focus(8).unwrap();
+
+        assert_eq!(finished.progression.total_xp, 30);
+    }
+
+    #[test]
+    fn snapshot_reports_only_the_current_focus_block() {
+        let clock = FakeClock::default();
+        let service = TimerService::new(clock.clone());
+        service.start_focus(0).unwrap();
+        clock.set(30 * MINUTE);
+        assert_eq!(service.snapshot().unwrap().focus_block_ms, 30 * 60 * 1_000);
+        service.finish_focus(1).unwrap();
+        clock.set(40 * MINUTE);
+        let rested = service.snapshot().unwrap();
+        assert_eq!(rested.focus_block_ms, 0);
+
+        service.start_focus(rested.revision).unwrap();
+        clock.set(52 * MINUTE);
+        let second = service.snapshot().unwrap();
+        assert_eq!(second.focus_elapsed_ms, 42 * 60 * 1_000);
+        assert_eq!(second.focus_block_ms, 12 * 60 * 1_000);
     }
 }

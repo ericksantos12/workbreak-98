@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 // @ts-expect-error type error without @types/node package
@@ -10,6 +11,10 @@ export default defineConfig(() => ({
   // 98.css 0.1.21 contains a legacy media query rejected by Vite's CSS minifier.
   build: {
     cssMinify: false,
+  },
+  // App tests live in src/. Release scripts under .github use node:test and run separately.
+  test: {
+    include: ["src/**/*.test.{ts,tsx}"],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

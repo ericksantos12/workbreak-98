@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { FocusRatio, TimerActionType, TimerSnapshot } from "../flowmodoro";
 import { formatElapsedTime, formatRemainingTime } from "../formatTime";
 
@@ -8,9 +8,10 @@ interface TimerPanelProps {
   isActionPending: boolean;
   onAction(action: TimerActionType): void;
   onRatioChange(ratio: FocusRatio): void;
+  children?: ReactNode;
 }
 
-function TimerPanel({ snapshot, isLoading, isActionPending, onAction, onRatioChange }: TimerPanelProps) {
+function TimerPanel({ snapshot, isLoading, isActionPending, onAction, onRatioChange, children }: TimerPanelProps) {
   const [resetPending, setResetPending] = useState(false);
   const phase = snapshot?.phase ?? "idle";
   const disabled = isLoading || isActionPending || !snapshot;
@@ -75,6 +76,7 @@ function TimerPanel({ snapshot, isLoading, isActionPending, onAction, onRatioCha
           </fieldset>
         </div>
       </div>
+      {children}
       <div className="session-footer">
         <span>Modo livre · sessão local</span>
         {phase !== "idle" && (
