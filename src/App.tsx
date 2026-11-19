@@ -1,19 +1,35 @@
 import "98.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
+import HeroPanel from "./components/HeroPanel";
 import TimerPanel from "./components/TimerPanel";
 import {
   type CloseDecision,
   onCloseSaveFailed,
+  type Reward,
   resolveClose,
 } from "./flowmodoro";
+import { createRewardTracker } from "./hero";
 import { useFlowmodoro } from "./useFlowmodoro";
 
 function App() {
   const [closeSaveFailed, setCloseSaveFailed] = useState(false);
   const { snapshot, error, isLoading, isActionPending, act, setRatio } =
     useFlowmodoro();
+  const rewardTracker = useRef(createRewardTracker());
+  const [reward, setReward] = useState<Reward | null>(null);
+
+  useEffect(() => {
+    const next = rewardTracker.current.next(snapshot?.progression);
+    if (!next) return;
+    // Keep a level-up from a notice the user has not dismissed yet.
+    setReward((shown) =>
+      shown?.levelUpTo != null && next.levelUpTo === null
+        ? { ...next, levelUpTo: shown.levelUpTo }
+        : next,
+    );
+  }, [snapshot]);
 
   useEffect(() => {
     let disposed = false;
@@ -62,6 +78,7 @@ function App() {
       <section className="window app-window" aria-labelledby="app-title">
         <div className="title-bar" data-tauri-drag-region>
           <div className="title-bar-text" id="app-title" data-tauri-drag-region>
+            <img src="/app-icon.png" width="16" height="16" alt="" draggable={false} data-tauri-drag-region />
             WorkBreak 98
           </div>
           <div className="title-bar-controls">
@@ -85,7 +102,15 @@ function App() {
             isActionPending={isActionPending}
             onAction={runAction}
             onRatioChange={changeRatio}
-          />
+          >
+            <HeroPanel
+              phase={snapshot?.phase ?? "idle"}
+              focusBlockMs={snapshot?.focusBlockMs ?? 0}
+              progression={snapshot?.progression}
+              reward={reward}
+              onDismissReward={() => setReward(null)}
+            />
+          </TimerPanel>
 
           {error && (
             <p className="error-message" role="alert">

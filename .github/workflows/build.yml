@@ -1,0 +1,131 @@
+name: Build and release
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.ref_name == 'dev' || github.ref_name == 'main'
+    uses: ./.github/workflows/check.yml
+
+  info:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.changelog.outputs.tag }}
+      exists: ${{ steps.tag.outputs.exists }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Read CHANGELOG.md
+        id: changelog
+        run: node .github/scripts/release.mjs
+      - name: Check existing tag
+        id: tag
+        env:
+          RELEASE_TAG: ${{ steps.changelog.outputs.tag }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then exit "$status"; fi
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  release-pr:
+    needs: info
+    if: github.ref_name == 'dev' && needs.info.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The PR is opened with a fine-grained PAT (Contents + Pull requests: read and write on
+    # this repo) so that it triggers the Check workflow, which GITHUB_TOKEN events do not.
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.info.outputs.tag }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - run: node .github/scripts/release.mjs
+      - name: Create or update dev to main release PR
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Add the RELEASE_TOKEN secret (fine-grained PAT) to open the release PR."
+            exit 1
+          fi
+          ahead=$(gh api "repos/$GH_REPO/compare/main...dev" --jq '.ahead_by')
+          if [ "$ahead" -eq 0 ]; then
+            echo "dev has no commits ahead of main; no release PR needed."
+            exit 0
+          fi
+          pr=$(gh pr list --base main --head dev --state open --json number --jq '.[].number')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "Release: $RELEASE_TAG" --body-file release-notes.md
+          else
+            gh pr create --base main --head dev --draft \
+              --title "Release: $RELEASE_TAG" --body-file release-notes.md
+          fi
+
+  build:
+    needs: info
+    if: needs.info.outputs.exists == 'false'
+    runs-on: windows-2022
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.info.outputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Apply changelog version to build metadata
+        run: node .github/scripts/release.mjs --sync
+      - name: Set up Rust
+        run: rustup toolchain install stable --profile minimal --no-self-update
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - name: Build Windows installer
+        run: npm run build:exe -- --ci -- --locked
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: workbreak-98-${{ env.RELEASE_TAG }}-${{ github.ref_name }}-${{ github.run_number }}-windows-x64
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+      - name: Publish GitHub release after main build
+        if: github.ref_name == 'main'
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem 'src-tauri/target/release/bundle/nsis/*.exe')
+          if ($installers.Count -eq 0) { throw "Installer not found" }
+          gh release create $env:RELEASE_TAG @($installers.FullName) --target $env:GITHUB_SHA --title "WorkBreak 98 $env:RELEASE_TAG" --notes-file release-notes.md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

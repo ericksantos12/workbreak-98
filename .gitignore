@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# pxl build output (sources in art/*.px.js)
+art/out
+
+# Release notes written by .github/scripts/release.mjs
+release-notes.md
+
+# oh-my-claudecode local state
+.omc/

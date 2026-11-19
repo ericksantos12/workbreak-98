@@ -22,6 +22,28 @@ export interface TimerSnapshot {
   breakRemainingMs: number;
   breakElapsedMs: number;
   persistenceStatus: PersistenceStatus;
+  /** Effective focus in the current block; drives the size of the hero's foes. */
+  focusBlockMs: number;
+  progression: ProgressionSnapshot;
+}
+
+export type RewardKind = "focus" | "rest";
+
+export interface Reward {
+  id: number;
+  kind: RewardKind;
+  xp: number;
+  levelUpTo: number | null;
+}
+
+/** Hero progression computed by the Rust service; the UI only displays it. */
+export interface ProgressionSnapshot {
+  level: number;
+  xpIntoLevel: number;
+  /** XP needed for the next level; 0 at the maximum level. */
+  xpForNextLevel: number;
+  totalXp: number;
+  lastReward: Reward | null;
 }
 
 export type TimerAction =
